@@ -1,2 +1,2 @@
 # TyXe
-Automatic BNN construction in pyro
+Automatic BNN construction for pytorch using pyro
