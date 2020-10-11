@@ -12,7 +12,9 @@ import torchvision
 import pyro
 import pyro.distributions as dist
 import pyro.infer.autoguide as ag
-import pyro.contrib.easybnn as ezbnn
+
+
+import tyxe
 
 
 NORMALIZERS = {
@@ -58,7 +60,7 @@ def main(dataset, architecture, inference, train_batch_size, test_batch_size, lo
     train_loader, test_loader = make_loaders(dataset, root, train_batch_size, test_batch_size, use_cuda)
     net = make_net(dataset, architecture).to(device)
 
-    observation_model = ezbnn.observation_models.Categorical(len(train_loader.sampler))
+    observation_model = tyxe.observation_models.Categorical(len(train_loader.sampler))
 
     num_predictions = 10
     prior_kwargs = dict(expose_all=False, hide_module_types=(nn.BatchNorm2d,))
@@ -70,28 +72,28 @@ def main(dataset, architecture, inference, train_batch_size, test_batch_size, lo
         num_predictions = 1
         guide = functools.partial(ag.AutoDelta, init_loc_fn=ezbnn.guides.SitewiseInitializer.from_net(net))
     elif inference == "mean-field":
-        guide = functools.partial(ezbnn.guides.ParameterwiseDiagonalNormal,
-                                  init_loc_fn=ezbnn.guides.SitewiseInitializer.from_net(net), init_scale=1e-4)
+        guide = functools.partial(tyxe.guides.ParameterwiseDiagonalNormal,
+                                  init_loc_fn=tyxe.guides.SitewiseInitializer.from_net(net), init_scale=1e-4)
     elif inference.startswith("last-layer"):
         del prior_kwargs['hide_module_types']
         prior_kwargs["expose_modules"] = [net.fc]
         if inference == "last-layer-mean-field":
-            guide = functools.partial(ezbnn.guides.ParameterwiseDiagonalNormal,
-                                      init_loc_fn=ezbnn.guides.SitewiseInitializer.from_net(net), init_scale=1e-4)
+            guide = functools.partial(tyxe.guides.ParameterwiseDiagonalNormal,
+                                      init_loc_fn=tyxe.guides.SitewiseInitializer.from_net(net), init_scale=1e-4)
         elif inference == "last-layer-full":
             guide = functools.partial(ag.AutoMultivariateNormal,
-                                      init_loc_fn=ezbnn.guides.SitewiseInitializer.from_net(net), init_scale=1e-4)
+                                      init_loc_fn=tyxe.guides.SitewiseInitializer.from_net(net), init_scale=1e-4)
         elif inference == "last-layer-low-rank":
             guide = functools.partial(ag.AutoLowRankMultivariateNormal, rank=rank,
-                                      init_loc_fn=ezbnn.guides.SitewiseInitializer.from_net(net), init_scale=1e-4)
+                                      init_loc_fn=tyxe.guides.SitewiseInitializer.from_net(net), init_scale=1e-4)
     else:
         raise RuntimeError("Unreachable")
 
-    prior = ezbnn.priors.IIDPrior(dist.Normal(torch.zeros(1, device=device), torch.ones(1, device=device)),
+    prior = tyxe.priors.IIDPrior(dist.Normal(torch.zeros(1, device=device), torch.ones(1, device=device)),
                                   **prior_kwargs)
-    bnn = ezbnn.SupervisedBNN(net, prior, observation_model, guide)
+    bnn = tyxe.SupervisedBNN(net, prior, observation_model, guide)
 
-    fit_ctxt = ezbnn.poutine.local_reparameterization if local_reparameterization else contextlib.nullcontext
+    fit_ctxt = tyxe.poutine.local_reparameterization if local_reparameterization else contextlib.nullcontext
     if max_guide_scale is not None:
         # the ClampParamMessenger doesn't work the way I thought it would because pyro calls .unconstrained() on the
         # parameters, so the return value can't be modified since that turns it into a tensor. Modifying the
