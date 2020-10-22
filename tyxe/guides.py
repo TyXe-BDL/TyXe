@@ -72,11 +72,13 @@ class SitewiseInitializer:
 class ParameterwiseDiagonalNormal(ag.AutoGuide):
 
     # add option for making init_sd something like "radford", etc.
-    def __init__(self, module, init_loc_fn=ag_init.init_to_median, init_scale=1e-1, train_loc=True, train_scale=True):
+    def __init__(self, module, init_loc_fn=ag_init.init_to_median, init_scale=1e-1, train_loc=True, train_scale=True,
+                 max_guide_scale=None):
         module = ag_init.InitMessenger(init_loc_fn)(module)
         self.init_scale = init_scale
         self.train_loc = train_loc
         self.train_scale = train_scale
+        self.max_guide_scale = max_guide_scale
         super().__init__(module)
 
     def _setup_prototype(self, *args, **kwargs):
@@ -92,7 +94,8 @@ class ParameterwiseDiagonalNormal(ag.AutoGuide):
                 scale_value = torch.full_like(site["value"], util.calculate_prior_std(self.init_scale, site["value"]))
             else:
                 scale_value = self.init_scale[site["name"]]
-            scale = pynn.PyroParam(scale_value, constraint=constraints.positive) if self.train_scale else scale_value
+            scale_constraint = constraints.positive if self.max_guide_scale is None else constraints.interval(0., self.max_guide_scale)
+            scale = pynn.PyroParam(scale_value, constraint=scale_constraint) if self.train_scale else scale_value
             ag.guides._deep_setattr(self, name + ".scale", scale)
 
     def get_loc(self, site_name):

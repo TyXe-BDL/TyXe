@@ -63,11 +63,11 @@ class SupervisedBNN(GuidedBNN):
         result.update(self.observation_guide(x, obs) or {})
         return result
 
-    def fit(self, data_loader, optim, num_epochs, callback=None, closed_form_kl=True, device=None):
+    def fit(self, data_loader, optim, num_epochs, callback=None, num_particles=1, closed_form_kl=True, device=None):
         old_training_state = self.net.training
         self.net.train(True)
 
-        loss = TraceMeanField_ELBO() if closed_form_kl else Trace_ELBO()
+        loss = TraceMeanField_ELBO(num_particles) if closed_form_kl else Trace_ELBO(num_particles)
         svi = SVI(self.model, self.guide, optim, loss=loss)
 
         for i in range(num_epochs):
@@ -128,6 +128,6 @@ class MCMC_BNN(_BNN):
         with torch.no_grad():
             for i in range(num_predictions):
                 weights = {name: sample[i] for name, sample in weight_samples.items()}
-                preds.append(poutine.condition(self.model, weights)(x))
+                preds.append(poutine.condition(self, weights)(x))
         predictions = torch.stack(preds)
         return self.observation_model.aggregate_predictions(predictions) if aggregate else predictions

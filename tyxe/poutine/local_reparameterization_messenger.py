@@ -84,6 +84,9 @@ class LocalReparameterizationMessenger(Messenger):
                 w_loc, w_var = _get_loc_var(w_fn)
                 b_loc, b_var = _get_loc_var(b_fn)
                 loc = msg["fn"](x, w_loc, b_loc, *args, **kwargs)
-                scale = msg["fn"](x.pow(2), w_var, b_var, *args, **kwargs).sqrt()
+                var = msg["fn"](x.pow(2), w_var, b_var, *args, **kwargs)
+                # ensure positive variances to avoid NaNs when taking square root
+                var = var + var.lt(0).float().mul(var.abs() + 1e-6).detach()
+                scale = var.sqrt()
                 msg["value"] = dist.Normal(loc, scale).rsample()
                 msg["done"] = True
