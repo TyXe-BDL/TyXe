@@ -4,4 +4,4 @@ from . import poutine
 from . import priors
 from . import util
 
-from .bnn import SupervisedBNN
+from .bnn import SupervisedBNN, MCMC_BNN
