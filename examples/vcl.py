@@ -132,7 +132,7 @@ def main(root, dataset):
                                  expose_all=False, hide_modules=[net.Head])
     guide = functools.partial(tyxe.guides.ParameterwiseDiagonalNormal, init_scale=1e-4,
                               init_loc_fn=tyxe.guides.SitewiseInitializer.from_net(net))
-    bnn = tyxe.SupervisedBNN(net, prior, obs, guide)
+    bnn = tyxe.VariationalBNN(net, prior, obs, guide)
 
     n_tasks = len(train_loaders)
     test_errors = torch.ones(n_tasks, n_tasks)

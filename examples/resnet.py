@@ -108,7 +108,7 @@ def main(dataset, architecture, inference, train_batch_size, test_batch_size, lo
 
     prior = tyxe.priors.IIDPrior(dist.Normal(torch.zeros(1, device=device), torch.ones(1, device=device)),
                                   **prior_kwargs)
-    bnn = tyxe.SupervisedBNN(net, prior, observation_model, guide)
+    bnn = tyxe.VariationalBNN(net, prior, observation_model, guide)
 
     if local_reparameterization:
         if flipout:

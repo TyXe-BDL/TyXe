@@ -41,7 +41,7 @@ class GuidedBNN(_BNN):
         return poutine.replay(self.net, trace=guide_tr)(*args, **kwargs)
 
 
-class SupervisedBNN(GuidedBNN):
+class VariationalBNN(GuidedBNN):
 
     def __init__(self, net, prior, observation_model, net_guide_builder=None, observation_guide_builder=None, name=""):
         super().__init__(net, prior, net_guide_builder, name=name)
@@ -118,6 +118,8 @@ class MCMC_BNN(_BNN):
         data = map(lambda t: torch.cat(t).to(device), zip(*iter(data_loader)))
         self._mcmc = MCMC(self.kernel, num_samples, **mcmc_kwargs)
         self._mcmc.run(*data)
+
+        return self._mcmc
 
     def predict(self, x, num_predictions=1, aggregate=True):
         if self._mcmc is None:

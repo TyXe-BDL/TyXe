@@ -10,7 +10,7 @@ net = nn.Sequential(nn.Linear(1, 50), nn.Tanh(), nn.Linear(50, 1))
 prior = tyxe.priors.IIDPrior(dist.Normal(0, 1))
 likelihood = tyxe.observation_models.HomoskedasticGaussian(scale=0.1)
 inference = pyro.infer.autoguides.AutoDiagonalNormal
-bnn = tyxe.SupervisedBNN(net, prior, likelihood, inference)
+bnn = tyxe.VariationalBNN(net, prior, likelihood, inference)
 ```
 
 In the following, we assume that you (roughly) know what a BNN is mathematically.
