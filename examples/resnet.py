@@ -58,7 +58,7 @@ def make_net(dataset, architecture):
     return net
 
 
-def main(dataset, architecture, inference, train_batch_size, test_batch_size, local_reparameterization,
+def main(dataset, architecture, inference, train_batch_size, test_batch_size, local_reparameterization, flipout,
          num_epochs, test_samples, max_guide_scale, rank, root, seed, output_dir, pretrained_weights, scale_only):
     pyro.set_rng_seed(seed)
     use_cuda = torch.cuda.is_available()
@@ -71,7 +71,6 @@ def main(dataset, architecture, inference, train_batch_size, test_batch_size, lo
         net.load_state_dict(sd)
 
     observation_model = tyxe.observation_models.Categorical(len(train_loader.sampler))
-
 
     prior_kwargs = dict(expose_all=False, hide_module_types=(nn.BatchNorm2d,))
     if inference == "ml":
@@ -111,7 +110,14 @@ def main(dataset, architecture, inference, train_batch_size, test_batch_size, lo
                                   **prior_kwargs)
     bnn = tyxe.SupervisedBNN(net, prior, observation_model, guide)
 
-    fit_ctxt = tyxe.poutine.local_reparameterization if local_reparameterization else contextlib.nullcontext
+    if local_reparameterization:
+        if flipout:
+            raise RuntimeError("Can't use both local reparameterization and flipout, pick one.")
+        fit_ctxt = tyxe.poutine.local_reparameterization
+    elif flipout:
+        fit_ctxt = tyxe.poutine.flipout
+    else:
+        fit_ctxt = contextlib.nullcontext
     optim = pyro.optim.Adam({"lr": 1e-3})
 
     def callback(b, i, avg_elbo):
@@ -153,6 +159,7 @@ if __name__ == '__main__':
     parser.add_argument("--num-epochs", type=int, default=200)
     parser.add_argument("--test-samples", type=int, default=20)
     parser.add_argument("--local-reparameterization", action="store_true")
+    parser.add_argument("--flipout", action="store_true")
     parser.add_argument("--max-guide-scale", type=float)
     parser.add_argument("--rank", type=int, default=10)
 
