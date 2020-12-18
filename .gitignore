@@ -3,3 +3,4 @@ __pycache__/
 notebooks/probprog_poster
 .ipynb_checkpoints/
 .idea/
+*.egg-info/
