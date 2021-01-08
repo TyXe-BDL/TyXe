@@ -45,8 +45,14 @@ class ObservationModel(PyroModule):
 
     def forward(self, predictions, obs=None):
         predictive_distribution = self.predictive_distribution(predictions)
-        with pyro.plate(self.var_name("data"), subsample=predictions, size=self.dataset_size):
-            return pyro.sample(self.observation_name, predictive_distribution, obs=obs)
+        if predictive_distribution.batch_shape:
+            dataset_size = self.dataset_size if self.dataset_size is not None else len(predictions)
+            with pyro.plate(self.var_name("data"), subsample=predictions, size=dataset_size):
+                return pyro.sample(self.observation_name, predictive_distribution, obs=obs)
+        else:
+            dataset_size = self.dataset_size if self.dataset_size is not None else 1
+            with pyro.poutine.scale(scale=dataset_size ** -1):
+                return pyro.sample(self.observation_name, predictive_distribution, obs=obs)
 
     def log_likelihood(self, predictions, data, aggregation_dim=None, reduction="none"):
         if aggregation_dim is not None:
