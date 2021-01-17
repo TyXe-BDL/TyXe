@@ -4,4 +4,4 @@ from . import poutine
 from . import priors
 from . import util
 
-from .bnn import VariationalBNN, MCMC_BNN
+from .bnn import *

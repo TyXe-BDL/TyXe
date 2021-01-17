@@ -1,3 +1,6 @@
+import itertools
+from operator import itemgetter
+
 import torch
 
 import pyro.nn as pynn
@@ -6,6 +9,9 @@ from pyro.infer import SVI, Trace_ELBO, TraceMeanField_ELBO, MCMC
 
 
 from . import util
+
+
+__all__ = ["PytorchBNN", "VariationalBNN", "MCMC_BNN"]
 
 
 def _empty_guide(*args, **kwargs):
@@ -49,6 +55,33 @@ class GuidedBNN(_BNN):
         if guide_tr is None:
             guide_tr = poutine.trace(self.net_guide).get_trace(*args, **kwargs)
         return poutine.replay(self.net, trace=guide_tr)(*args, **kwargs)
+
+
+class PytorchBNN(GuidedBNN):
+
+    def __init__(self, net, prior, guide_builder=None, name="", closed_form_kl=True):
+        super().__init__(net, prior, guide_builder=guide_builder, name=name)
+        self.cached_output = None
+        self.cached_kl_loss = None
+        self._loss = TraceMeanField_ELBO() if closed_form_kl else Trace_ELBO()
+
+    def named_pytorch_parameters(self, *input_data):
+        model_trace = poutine.trace(self.net, param_only=True).get_trace(*input_data)
+        guide_trace = poutine.trace(self.net_guide, param_only=True).get_trace(*input_data)
+        for name, msg in itertools.chain(model_trace.nodes.items(), guide_trace.nodes.items()):
+            yield name, msg["value"].unconstrained()
+        # yield from poutine.trace(self, param_only=True).get_trace(*input_data).nodes.items()
+
+    def pytorch_parameters(self, input_data_or_fwd_fn):
+        yield from map(itemgetter(1), self.named_pytorch_parameters(input_data_or_fwd_fn))
+
+    def cached_forward(self, *args, **kwargs):
+        self.cached_output = super().forward(*args, **kwargs)
+        return self.cached_output
+
+    def forward(self, *args, **kwargs):
+        self.cached_kl_loss = self._loss.differentiable_loss(self.cached_forward, self.net_guide, *args, **kwargs)
+        return self.cached_output
 
 
 class VariationalBNN(GuidedBNN):
@@ -124,10 +157,10 @@ class MCMC_BNN(_BNN):
         self.observation_model(predictions, obs)
         return predictions
 
-    def fit(self, data_loader, num_samples, device=None, **mcmc_kwargs):
-        data = map(lambda t: torch.cat(t).to(device), zip(*iter(data_loader)))
+    def fit(self, input_data, observation_data, num_samples, device=None, **mcmc_kwargs):
+        # data = map(lambda t: torch.cat(t).to(device), zip(*iter(data_loader)))
         self._mcmc = MCMC(self.kernel, num_samples, **mcmc_kwargs)
-        self._mcmc.run(*data)
+        self._mcmc.run(input_data, observation_data)
 
         return self._mcmc
 
