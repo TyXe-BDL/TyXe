@@ -1,3 +1,4 @@
+import argparse
 from functools import partial
 import os
 import torch
@@ -533,7 +534,7 @@ def show_full_render(
         neural_radiance_field, camera,
         target_image, target_silhouette,
         loss_history_color, loss_history_sil,
-        renderer_grid
+        renderer_grid, num_forward=1
 ):
     """
     This is a helper function for visualizing the
@@ -549,35 +550,58 @@ def show_full_render(
     to prevent GPU memory overflow.
     """
 
+    rendered_image_list, rendered_silhouette_list = [], []
     # Prevent gradient caching.
     with torch.no_grad():
-        # Render using the grid renderer and the
-        # batched_forward function of neural_radiance_field.
-        rendered_image_silhouette, _ = renderer_grid(
-            cameras=camera,
-            volumetric_function=partial(batched_forward, net=neural_radiance_field)
-        )
-        # Split the rendering result to a silhouette render
-        # and the image render.
-        rendered_image, rendered_silhouette = (
-            rendered_image_silhouette[0].split([3, 1], dim=-1)
-        )
+        for _ in range(num_forward):
+            # Render using the grid renderer and the
+            # batched_forward function of neural_radiance_field.
+            rendered_image_silhouette, _ = renderer_grid(
+                cameras=camera,
+                volumetric_function=partial(batched_forward, net=neural_radiance_field)
+            )
+            # Split the rendering result to a silhouette render
+            # and the image render.
+            rendered_image_, rendered_silhouette_ = (
+                rendered_image_silhouette[0].split([3, 1], dim=-1)
+            )
+            rendered_image_list.append(rendered_image_)
+            rendered_silhouette_list.append(rendered_silhouette_)
 
+        rendered_images = torch.stack(rendered_image_list)
+        rendered_image = rendered_images.mean(0)
+
+        rendered_silhouettes = torch.stack(rendered_silhouette_list)
+        rendered_silhouette = rendered_silhouettes.mean(0)
+
+        if num_forward > 1:
+            rendered_image_std = rendered_images.var(0).sum(-1).sqrt()
+            rendered_silhouette_std = rendered_silhouettes.std(0)
+        else:
+            rendered_image_std = torch.zeros_like(rendered_image[..., 0])
+            rendered_silhouette_std = torch.zeros_like(rendered_silhouette)
+
+    print(f"Max image std: {rendered_image_std.max().item():.4f}; "
+          f"max image: {rendered_image.max().item():.4f}; "
+          f"max silhouette std: {rendered_silhouette_std.max().item():.4f}; "
+          f"max silhouette: {rendered_silhouette.max().item():.4f}")
     # Generate plots.
-    fig, ax = plt.subplots(2, 3, figsize=(15, 10))
+    fig, ax = plt.subplots(2, 4, figsize=(20, 10))
     ax = ax.ravel()
     clamp_and_detach = lambda x: x.clamp(0.0, 1.0).cpu().detach().numpy()
     ax[0].plot(list(range(len(loss_history_color))), loss_history_color, linewidth=1)
     ax[1].imshow(clamp_and_detach(rendered_image))
     ax[2].imshow(clamp_and_detach(rendered_silhouette[..., 0]))
-    ax[3].plot(list(range(len(loss_history_sil))), loss_history_sil, linewidth=1)
-    ax[4].imshow(clamp_and_detach(target_image))
-    ax[5].imshow(clamp_and_detach(target_silhouette))
+    ax[3].imshow(clamp_and_detach(rendered_image_std), cmap="hot", vmax=0.75 ** 0.5)
+    ax[4].plot(list(range(len(loss_history_sil))), loss_history_sil, linewidth=1)
+    ax[5].imshow(clamp_and_detach(target_image))
+    ax[6].imshow(clamp_and_detach(target_silhouette))
+    ax[7].imshow(clamp_and_detach(rendered_silhouette_std), cmap="hot", vmax=0.5)
     for ax_, title_ in zip(
             ax,
             (
-                    "loss color", "rendered image", "rendered silhouette",
-                    "loss silhouette", "target image", "target silhouette",
+                    "loss color", "rendered image", "rendered silhouette", "image uncertainty",
+                    "loss silhouette", "target image", "target silhouette", "silhouette uncertainty"
             )
     ):
         if not title_.startswith('loss'):
@@ -620,7 +644,7 @@ def generate_rotating_nerf(neural_radiance_field, target_cameras, renderer_grid,
     return torch.cat(frames)
 
 
-def main():
+def main(inference, n_iter, save_state_dict, load_state_dict, kl_annealing_iters, max_kl_factor):
     if torch.cuda.is_available():
         device = torch.device("cuda:0")
         torch.cuda.set_device(device)
@@ -703,16 +727,29 @@ def main():
 
     # Instantiate the radiance field model.
     neural_radiance_field_net = NeuralRadianceField().to(device)
+    if load_state_dict is not None:
+        sd = torch.load(load_state_dict)
+        sd["harmonic_embedding.frequencies"] = neural_radiance_field_net.harmonic_embedding.frequencies
+        neural_radiance_field_net.load_state_dict(sd)
 
-    # TYXE comment: here we set up the BNN, the regular version
+    # TYXE comment: set up the BNN depending on the desired inference
     standard_normal = dist.Normal(torch.tensor(0.).to(device), torch.tensor(1.).to(device))
-    prior = tyxe.priors.IIDPrior(standard_normal)
-    # ML prior: prior = tyxe.priors.IIDPrior(standard_normal, expose_all=False, hide_all=True)
-    guide = partial(tyxe.guides.ParameterwiseDiagonalNormal, init_scale=1e-5,
-                    init_loc_fn=tyxe.guides.SitewiseInitializer.from_net(neural_radiance_field_net))
-    # ML guide: guide = None
-    # MAP guide: guide = partial(pyro.infer.autoguide.AutoDelta,
-    #                            init_loc_fn=tyxe.guides.SitewiseInitializer.from_net(neural_radiance_field_net))
+    prior_kwargs = {}
+    test_samples = 1
+    if inference == "ml":
+        prior_kwargs.update(expose_all=False, hide_all=True)
+        guide = None
+    elif inference == "map":
+        guide = partial(pyro.infer.autoguide.AutoDelta,
+                        init_loc_fn=tyxe.guides.SitewiseInitializer.from_net(neural_radiance_field_net))
+    elif inference == "mean-field":
+        guide = partial(tyxe.guides.ParameterwiseDiagonalNormal, init_scale=1e-2,
+                        init_loc_fn=tyxe.guides.SitewiseInitializer.from_net(neural_radiance_field_net))
+        test_samples = 8
+    else:
+        raise RuntimeError(f"Unreachable inference: {inference}")
+
+    prior = tyxe.priors.IIDPrior(standard_normal, **prior_kwargs)
     neural_radiance_field = tyxe.PytorchBNN(neural_radiance_field_net, prior, guide)
 
     # TYXE comment: we need a batch of dummy data for the BNN to trace the parameters
@@ -729,23 +766,17 @@ def main():
     # emits raysampler_mc.n_pts_per_image rays.
     batch_size = 6
 
-    # 3000 iterations take ~20 min on a Tesla M40 and lead to
-    # reasonably sharp results. However, for the best possible
-    # results, we recommend setting n_iter=20000.
-    n_iter = 20000
-
     # Init the loss history buffers.
     loss_history_color, loss_history_sil = [], []
 
-    kl_factor = 0.
-    max_kl_factor = 1.
+    if kl_annealing_iters > 0:
+        kl_factor = 0.
+        kl_annealing_rate = max_kl_factor / kl_annealing_iters
+    else:
+        kl_factor = max_kl_factor
+        kl_annealing_rate = 0.
     # The main optimization loop.
     for iteration in range(n_iter):
-        # TYXE comment: anneal kl weight over a quarter of the number of epochs after training for half the epochs
-        # with a "maximum likelihood" objective. I'm planning to make max_kl_factor a command line argument
-        if iteration > n_iter // 2:
-            kl_factor = min(max_kl_factor, kl_factor + max_kl_factor * (n_iter // 4) ** -1)
-
         # In case we reached the last 75% of iterations,
         # decrease the learning rate of the optimizer 10-fold.
         if iteration == round(n_iter * 0.75):
@@ -810,8 +841,9 @@ def main():
         # i.e. the total number of data points times the number of values that the data-dependent part of the
         # objective averages over. Effectively I'm treating this as if this was something like a Bernoulli likelihood
         # in a VAE where the expected log likelihood is averaged over both data points and pixels
-        kl_scale = kl_factor / (len(target_cameras) * (colors_at_rays[0].numel() + silhouettes_at_rays[0].numel()))
-        loss = color_err + sil_err + kl_scale * neural_radiance_field.cached_kl_loss
+        beta = kl_factor / (len(target_cameras) * (colors_at_rays[0].numel() + silhouettes_at_rays[0].numel()))
+        kl_err = neural_radiance_field.cached_kl_loss
+        loss = color_err + sil_err + beta * kl_err
 
         # Log the loss history.
         loss_history_color.append(float(color_err))
@@ -823,11 +855,16 @@ def main():
                 f'Iteration {iteration:05d}:'
                 + f' loss color = {float(color_err):1.2e}'
                 + f' loss silhouette = {float(sil_err):1.2e}'
+                + f' loss kl = {float(kl_err):1.2e}'
+                + f' beta = {beta:1.3e}'
             )
 
         # Take the optimization step.
         loss.backward()
         optimizer.step()
+
+        # TYXE comment: anneal the kl rate
+        kl_factor = min(max_kl_factor, kl_factor + kl_annealing_rate)
 
         # Visualize the full renders every 100 iterations.
         if iteration % 100 == 0:
@@ -847,7 +884,8 @@ def main():
                 target_silhouettes[show_idx][0],
                 loss_history_color,
                 loss_history_sil,
-                renderer_grid
+                renderer_grid,
+                num_forward=test_samples
             )
             plt.savefig(f"nerf/full_render{iteration}.png")
             plt.close(fig)
@@ -859,6 +897,19 @@ def main():
     image_grid(rotating_nerf_frames.clamp(0., 1.).cpu().numpy(), rows=3, cols=5, rgb=True, fill=True)
     plt.savefig("nerf/final_image_grid.png")
 
+    if save_state_dict is not None:
+        if inference != "ml":
+            raise ValueError("Can only save a state dict for maximum likelihood inference")
+        state_dict = dict(neural_radiance_field.named_pytorch_parameters(dummy_data))
+        torch.save(state_dict, save_state_dict)
+
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--inference", choices=["ml", "map", "mean-field"], required=True)
+    parser.add_argument("--n-iter", type=int, default=20000)
+    parser.add_argument("--save-state-dict")
+    parser.add_argument("--load-state-dict")
+    parser.add_argument("--kl-annealing-iters", type=int, default=0)
+    parser.add_argument("--max-kl-factor", type=float, default=1.)
+    main(**vars(parser.parse_args()))
