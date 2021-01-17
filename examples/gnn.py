@@ -55,8 +55,9 @@ def load_cora_data():
     labels = torch.LongTensor(data.labels)
     train_mask = torch.BoolTensor(data.train_mask)
     test_mask = torch.BoolTensor(data.test_mask)
+    val_mask = torch.BoolTensor(data.val_mask)
     g = dgl.from_networkx(data.graph)
-    return g, features, labels, train_mask, test_mask
+    return g, features, labels, train_mask, test_mask, val_mask
 
 
 def calc_ece(probs, labels, num_bins):
@@ -78,13 +79,14 @@ def calc_ece(probs, labels, num_bins):
 def main(inference, lr, num_epochs, milestones):
     net = Net()
 
-    g, features, labels, train_mask, test_mask = load_cora_data()
+    g, features, labels, train_mask, test_mask, val_mask = load_cora_data()
     # Add edges between each node and itself to preserve old node representations
     g.add_edges(g.nodes(), g.nodes())
     total_nodes = len(train_mask)
     training_nodes = train_mask.float().sum().item()
 
     prior_kwargs = {}
+    test_samples = 1
     if inference == "ml":
         # hide everything from the prior so that every nn.Parameter becomes a PyroParam
         prior_kwargs.update(expose_all=False, hide_all=True)
@@ -95,6 +97,7 @@ def main(inference, lr, num_epochs, milestones):
     elif inference == "mean-field":
         guide = partial(tyxe.guides.ParameterwiseDiagonalNormal, init_scale=1e-4, max_guide_scale=0.3,
                         init_loc_fn=tyxe.guides.SitewiseInitializer.from_net(net))
+        test_samples = 8
     else:
         raise RuntimeError("Unreachable")
     prior = tyxe.priors.IIDPrior(dist.Normal(0, 1), **prior_kwargs)
@@ -112,16 +115,29 @@ def main(inference, lr, num_epochs, milestones):
     # NN and the second element is a tensor that contains the labels
     loader = [((g, features), labels)]
 
+    acc_list, ece_list, nll_list = [], [], []
+
     def callback(b, i, e):
-        errs = b.evaluate((g, features), labels, num_predictions=8, reduction="none")[0]
-        acc = 1 - errs[test_mask].mean()
-        ece = calc_ece(b.predict(g, features, num_predictions=8).softmax(-1)[test_mask], labels[test_mask], 10)
-        print(f"Epoch {i+1:03d} | ELBO {e/training_nodes:03.4f} | Test Acc {100 * acc:.1f}% | ECE {100 * ece:.2f}%")
+        errs, lls = b.evaluate((g, features), labels, num_predictions=test_samples, reduction="none")
+        test_acc = 1 - errs[test_mask].mean().item()
+        val_nll = -lls[val_mask].mean().item()
+        ece = calc_ece(b.predict(g, features, num_predictions=test_samples).softmax(-1)[test_mask],
+                       labels[test_mask], 10).item()
+        print(f"Epoch {i+1:03d} | ELBO {e/training_nodes:03.4f} | Test Acc {100 * test_acc:.1f}% |"
+              f" ECE {100 * ece:.2f}% | Val NLL {val_nll:.4f}")
+
         scheduler.step()
+        acc_list.append(test_acc)
+        ece_list.append(ece)
+        nll_list.append(val_nll)
 
     # the mask poutine is needed to only evaluate the log likelihood of the training nodes
-    with tyxe.poutine.selective_mask(mask=train_mask, hide_all=False, expose=["observation_model.obs"]):
+    with tyxe.poutine.selective_mask(mask=train_mask, hide_all=False, expose=["observation_model.obs"]), tyxe.poutine.flipout():
         bnn.fit(loader, scheduler, num_epochs, callback, num_particles=1)
+
+    min_nll_epoch = torch.tensor(nll_list).argmin().item()
+    print(f"At lowest validation NLL (Epoch {min_nll_epoch:03d}; NLL={nll_list[min_nll_epoch]:.4f}): "
+          f"Test accuracy {100*acc_list[min_nll_epoch]:.1f}% | ECE {100*ece_list[min_nll_epoch]:.1f}%")
 
 
 if __name__ == "__main__":

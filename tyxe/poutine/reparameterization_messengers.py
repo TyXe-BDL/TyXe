@@ -1,5 +1,5 @@
 from functools import update_wrapper
-from weakref import WeakValueDictionary
+from weakref import WeakValueDictionary, WeakKeyDictionary
 
 import torch
 import torch.nn.functional as F
@@ -117,9 +117,7 @@ class _ReparameterizationMessenger(Messenger):
             w_fn = self.deps[id(w)]
             b_fn = self.deps[id(b)] if b is not None else None
             if torch.is_tensor(x) and _is_reparameterizable(w_fn) and _is_reparameterizable(b_fn):
-                w_loc, w_var = _get_loc_var(w_fn)
-                b_loc, b_var = _get_loc_var(b_fn)
-                msg["value"] = self._reparameterize(msg, x, w_loc, w_var, b_loc, b_var, *args, **kwargs)
+                msg["value"] = self._reparameterize(msg, x, w_fn, w, b_fn, b, *args, **kwargs)
                 msg["done"] = True
 
     def _reparameterize(self, msg, x, w_loc, w_var, b_loc, b_var, *args, **kwargs):
@@ -129,7 +127,9 @@ class _ReparameterizationMessenger(Messenger):
 class LocalReparameterizationMessenger(_ReparameterizationMessenger):
     """Implements local reparameterization: https://arxiv.org/abs/1506.02557"""
 
-    def _reparameterize(self, msg, x, w_loc, w_var, b_loc, b_var, *args, **kwargs):
+    def _reparameterize(self, msg, x, w_fn, w, b_fn, b, *args, **kwargs):
+        w_loc, w_var = _get_loc_var(w_fn)
+        b_loc, b_var = _get_loc_var(b_fn)
         loc = msg["fn"](x, w_loc, b_loc, *args, **kwargs)
         var = msg["fn"](x.pow(2), w_var, b_var, *args, **kwargs)
         # ensure positive variances to avoid NaNs when taking square root
@@ -153,10 +153,10 @@ class FlipoutMessenger(_ReparameterizationMessenger):
 
     FUNCTION_RANKS = {"linear": 1, "conv1d": 2, "conv2d": 3, "conv3d": 4}
 
-    def _reparameterize(self, msg, x, w_loc, w_var, b_loc, b_var, *args, **kwargs):
+    def _reparameterize(self, msg, x, w_fn, w, b_fn, b, *args, **kwargs):
         fn = msg["fn"]
+        w_loc, _ = _get_loc_var(w_fn)
         loc = fn(x, w_loc, None, *args, **kwargs)
-        w_perturbation = dist.Normal(0, w_var.sqrt()).rsample()
 
         # x might be one dimensional for a 1-d input with a single datapoint to F.linear, F.conv always has a batch dim
         batch_shape = x.shape[:-self.FUNCTION_RANKS[fn.__name__]] if x.ndim > 1 else tuple()
@@ -164,13 +164,16 @@ class FlipoutMessenger(_ReparameterizationMessenger):
         output_shape = (w_loc.shape[0],) if w_loc.ndim > 1 else tuple()
         input_shape = (w_loc.shape[1],) if w_loc.ndim > 1 else (w_loc.shape[0],)
 
-        sign_input = _pad_right_like(_rand_signs(batch_shape + input_shape, device=loc.device), x)
-        sign_output = _pad_right_like(_rand_signs(batch_shape + output_shape, device=loc.device), x)
+        if not hasattr(w, "sign_input"):
+            w.sign_input = _pad_right_like(_rand_signs(batch_shape + input_shape, device=loc.device), x)
+            w.sign_output = _pad_right_like(_rand_signs(batch_shape + output_shape, device=loc.device), x)
 
-        perturbation = fn(x * sign_input, w_perturbation, None, *args, **kwargs) * sign_output
+        w_perturbation = w - w_loc
+        perturbation = fn(x * w.sign_input, w_perturbation, None, *args, **kwargs) * w.sign_output
 
         output = loc + perturbation
-        if b_loc is not None:
+        if b is not None:
+            b_loc, b_var = _get_loc_var(b_fn)
             bias = _pad_right_like(dist.Normal(b_loc, b_var.sqrt()).rsample(batch_shape), output)
             output += bias
         return output
