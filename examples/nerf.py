@@ -265,6 +265,13 @@ class HarmonicEmbedding(torch.nn.Module):
         return torch.cat((embed.sin(), embed.cos()), dim=-1)
 
 
+def save_io_nerf(rays_points_world, rays_densities, rays_colors, path='./data/'):
+    os.makedirs(path, exist_ok=True)
+    torch.save(rays_points_world.detach().to("cpu"), os.path.join(path, 'rays_points_world.pt'))
+    torch.save(rays_densities.detach().to("cpu"), os.path.join(path, "rays_densities.pt"))
+    torch.save(rays_colors.detach().to("cpu"), os.path.join(path, "rays_colors.pt"))
+
+
 class NeuralRadianceField(torch.nn.Module):
     def __init__(self, n_harmonic_functions=60, n_hidden_neurons=256):
         super().__init__()
@@ -373,6 +380,7 @@ class NeuralRadianceField(torch.nn.Module):
     def forward(
         self,
         ray_bundle: RayBundle,
+        path = None,
         **kwargs,
     ):
         """
@@ -421,6 +429,9 @@ class NeuralRadianceField(torch.nn.Module):
         rays_colors = self._get_colors(features, ray_bundle.directions)
         # rays_colors.shape = [minibatch x ... x 3]
 
+        if path is not None:
+            save_io_nerf(rays_points_world, rays_densities, rays_colors, path)
+
         return rays_densities, rays_colors
 
 
@@ -429,6 +440,7 @@ def batched_forward(
     net,
     ray_bundle: RayBundle,
     n_batches: int = 16,
+    path = None,
     **kwargs,
 ):
     """
@@ -477,8 +489,8 @@ def batched_forward(
                 directions=ray_bundle.directions.view(-1, 3)[batch_idx],
                 lengths=ray_bundle.lengths.view(-1, n_pts_per_ray)[batch_idx],
                 xys=None,
-            )
-        ) for batch_idx in batches
+            ), path=None if path is None else f"{path}/batch{i}"
+        ) for i, batch_idx in enumerate(batches)
     ]
 
     # Concatenate the per-batch rays_densities and rays_colors
@@ -488,6 +500,8 @@ def batched_forward(
             [batch_output[output_i] for batch_output in batch_outputs], dim=0
         ).view(*spatial_size, -1) for output_i in (0, 1)
     ]
+    if path is not None:
+        torch.save(spatial_size, f"{path}/spatial_size.pt")
     return rays_densities, rays_colors
 
 
@@ -625,7 +639,7 @@ def generate_rotating_nerf(neural_radiance_field, target_cameras, renderer_grid,
     frames = []
     uncertainties = []
     print('Rendering rotating NeRF ...')
-    for R, T in zip(tqdm(Rs), Ts):
+    for i, (R, T) in enumerate(zip(tqdm(Rs), Ts)):
         camera = FoVPerspectiveCameras(
             R=R[None],
             T=T[None],
@@ -639,8 +653,8 @@ def generate_rotating_nerf(neural_radiance_field, target_cameras, renderer_grid,
         # and the batched_forward function of neural_radiance_field.
         frame_samples = torch.stack([renderer_grid(
                 cameras=camera,
-                volumetric_function=partial(batched_forward, net=neural_radiance_field)
-            )[0][..., :3] for _ in range(num_forward)])
+                volumetric_function=partial(batched_forward, net=neural_radiance_field, path=f"nerf_vis/view{i}/sample{j}")
+            )[0][..., :3] for j in range(num_forward)])
         frames.append(frame_samples.mean(0))
         uncertainties.append(frame_samples.var(0).sum(-1).sqrt() if num_forward > 1 else torch.zeros_like(frame_samples[0, ..., 0]))
     return torch.cat(frames), torch.cat(uncertainties)
@@ -775,7 +789,7 @@ def main(inference, n_iter, save_state_dict, load_state_dict, kl_annealing_iters
 
     if kl_annealing_iters > 0 or zero_kl_iters > 0:
         kl_factor = 0.
-        kl_annealing_rate = max_kl_factor / min(kl_annealing_iters, 1)
+        kl_annealing_rate = max_kl_factor / max(kl_annealing_iters, 1)
     else:
         kl_factor = max_kl_factor
         kl_annealing_rate = 0.
@@ -806,10 +820,9 @@ def main(inference, n_iter, save_state_dict, load_state_dict, kl_annealing_iters
             device=device,
         )
 
-        # Evaluate the nerf model.
         rendered_images_silhouettes, sampled_rays = renderer_mc(
             cameras=batch_cameras,
-            volumetric_function=neural_radiance_field
+            volumetric_function=partial(batched_forward, net=neural_radiance_field)
         )
         rendered_images, rendered_silhouettes = (
             rendered_images_silhouettes.split([3, 1], dim=-1)
@@ -845,7 +858,7 @@ def main(inference, n_iter, save_state_dict, load_state_dict, kl_annealing_iters
         # i.e. the total number of data points times the number of values that the data-dependent part of the
         # objective averages over. Effectively I'm treating this as if this was something like a Bernoulli likelihood
         # in a VAE where the expected log likelihood is averaged over both data points and pixels
-        beta = kl_factor / (len(target_cameras) * (colors_at_rays[0].numel() + silhouettes_at_rays[0].numel()))
+        beta = kl_factor / (target_images.numel() + target_silhouettes.numel())
         kl_err = neural_radiance_field.cached_kl_loss
         loss = color_err + sil_err + beta * kl_err
 
@@ -860,7 +873,7 @@ def main(inference, n_iter, save_state_dict, load_state_dict, kl_annealing_iters
                 + f' loss color = {float(color_err):1.2e}'
                 + f' loss silhouette = {float(sil_err):1.2e}'
                 + f' loss kl = {float(kl_err):1.2e}'
-                + f' beta = {beta:1.3e}'
+                + f' kl_factor = {kl_factor:1.3e}'
             )
 
         # Take the optimization step.
@@ -872,7 +885,7 @@ def main(inference, n_iter, save_state_dict, load_state_dict, kl_annealing_iters
             kl_factor = min(max_kl_factor, kl_factor + kl_annealing_rate)
 
         # Visualize the full renders every 100 iterations.
-        if iteration % 100 == 0:
+        if iteration % 1000 == 0:
             show_idx = torch.randperm(len(target_cameras))[:1]
             fig = show_full_render(
                 neural_radiance_field,
@@ -927,6 +940,81 @@ def main(inference, n_iter, save_state_dict, load_state_dict, kl_annealing_iters
             raise ValueError("Can only save a state dict for maximum likelihood inference")
         state_dict = dict(neural_radiance_field.named_pytorch_parameters(dummy_data))
         torch.save(state_dict, save_state_dict)
+
+    test_cameras, test_images, test_silhouettes = generate_cow_renders(
+        num_views=10, azimuth_low=90, azimuth_high=180)
+
+    del renderer_mc
+    del target_cameras
+    del target_images
+    del target_silhouettes
+    torch.cuda.empty_cache()
+
+    test_cameras = test_cameras.to(device)
+    test_images = test_images.to(device)
+    test_silhouettes = test_silhouettes.to(device)
+
+    with torch.no_grad():
+        sil_err = 0.
+        color_err = 0.
+        for i in range(len(test_cameras)):
+            batch_idx = [i]
+
+            # Sample the minibatch of cameras.
+            batch_cameras = FoVPerspectiveCameras(
+                R=test_cameras.R[batch_idx],
+                T=test_cameras.T[batch_idx],
+                znear=test_cameras.znear[batch_idx],
+                zfar=test_cameras.zfar[batch_idx],
+                aspect_ratio=test_cameras.aspect_ratio[batch_idx],
+                fov=test_cameras.fov[batch_idx],
+                device=device,
+            )
+
+            img_list, sils_list, sampled_rays_list,  = [], [], []
+            for _ in range(test_samples):
+                rendered_images_silhouettes, sampled_rays = renderer_grid(
+                    cameras=batch_cameras,
+                    volumetric_function=partial(batched_forward, net=neural_radiance_field)
+                )
+                imgs, sils = (
+                    rendered_images_silhouettes.split([3, 1], dim=-1)
+                )
+                img_list.append(imgs)
+                sils_list.append(sils)
+                sampled_rays_list.append(sampled_rays.xys)
+
+            assert sampled_rays_list[0].eq(torch.stack(sampled_rays_list)).all()
+
+            rendered_images = torch.stack(img_list).mean(0)
+            rendered_silhouettes = torch.stack(sils_list).mean(0)
+
+            # Compute the silhoutte error as the mean huber
+            # loss between the predicted masks and the
+            # sampled target silhouettes.
+            # TYXE comment: sampled_rays are always the same for renderer_grid
+            silhouettes_at_rays = sample_images_at_mc_locs(
+                test_silhouettes[batch_idx, ..., None],
+                sampled_rays.xys
+            )
+            sil_err += huber(
+                rendered_silhouettes,
+                silhouettes_at_rays,
+            ).abs().mean().item() / len(test_cameras)
+
+            # Compute the color error as the mean huber
+            # loss between the rendered colors and the
+            # sampled target images.
+            colors_at_rays = sample_images_at_mc_locs(
+                test_images[batch_idx],
+                sampled_rays.xys
+            )
+            color_err += huber(
+                rendered_images,
+                colors_at_rays,
+            ).abs().mean().item() / len(test_cameras)
+
+    print(f"Test error: sil={sil_err:1.3e}; col={color_err:1.3e}")
 
 
 if __name__ == '__main__':
