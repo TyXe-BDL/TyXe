@@ -5,7 +5,7 @@ import torch
 import matplotlib.pyplot as plt
 import numpy as np
 from IPython import display
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 from collections import namedtuple
 
 # Data structures and functions for rendering
@@ -43,7 +43,7 @@ DATA_DIR = os.path.join(current_dir, "..", "data", "cow_mesh")
 
 
 def generate_cow_renders(
-    num_views: int = 40, data_dir: str = DATA_DIR, azimuth_range: float = 180
+    num_views: int = 40, data_dir: str = DATA_DIR, azimuth_low: float = -180, azimuth_high: float = 180
 ):
     """
     This function generates `num_views` renders of a cow mesh.
@@ -111,7 +111,7 @@ def generate_cow_renders(
 
     # Get a batch of viewing angles.
     elev = torch.linspace(0, 0, num_views)  # keep constant
-    azim = torch.linspace(-azimuth_range, azimuth_range, num_views) + 180.0
+    azim = torch.linspace(azimuth_low, azimuth_high, num_views) + 180.0
 
     # Place a point light in front of the object. As mentioned above, the front of
     # the cow is facing the -z direction.
@@ -186,6 +186,7 @@ def image_grid(
     fill: bool = True,
     show_axes: bool = False,
     rgb: bool = True,
+    **kwargs
 ):
     """
     A util function for plotting a grid of images.
@@ -215,10 +216,10 @@ def image_grid(
     for ax, im in zip(axarr.ravel(), images):
         if rgb:
             # only render RGB channels
-            ax.imshow(im[..., :3])
+            ax.imshow(im[..., :3], **kwargs)
         else:
             # only render Alpha channel
-            ax.imshow(im[..., 3])
+            ax.imshow(im[..., 3], **kwargs)
         if not show_axes:
             ax.set_axis_off()
 
@@ -615,13 +616,14 @@ def show_full_render(
     return fig
 
 
-def generate_rotating_nerf(neural_radiance_field, target_cameras, renderer_grid, device, n_frames=50):
+def generate_rotating_nerf(neural_radiance_field, target_cameras, renderer_grid, device, n_frames=50, num_forward=1):
     logRs = torch.zeros(n_frames, 3, device=device)
     logRs[:, 1] = torch.linspace(-3.14, 3.14, n_frames, device=device)
     Rs = so3_exponential_map(logRs)
     Ts = torch.zeros(n_frames, 3, device=device)
     Ts[:, 2] = 2.7
     frames = []
+    uncertainties = []
     print('Rendering rotating NeRF ...')
     for R, T in zip(tqdm(Rs), Ts):
         camera = FoVPerspectiveCameras(
@@ -635,16 +637,17 @@ def generate_rotating_nerf(neural_radiance_field, target_cameras, renderer_grid,
         )
         # Note that we again render with `NDCGridSampler`
         # and the batched_forward function of neural_radiance_field.
-        frames.append(
-            renderer_grid(
+        frame_samples = torch.stack([renderer_grid(
                 cameras=camera,
                 volumetric_function=partial(batched_forward, net=neural_radiance_field)
-            )[0][..., :3]
-        )
-    return torch.cat(frames)
+            )[0][..., :3] for _ in range(num_forward)])
+        frames.append(frame_samples.mean(0))
+        uncertainties.append(frame_samples.var(0).sum(-1).sqrt() if num_forward > 1 else torch.zeros_like(frame_samples[0, ..., 0]))
+    return torch.cat(frames), torch.cat(uncertainties)
 
 
-def main(inference, n_iter, save_state_dict, load_state_dict, kl_annealing_iters, max_kl_factor):
+def main(inference, n_iter, save_state_dict, load_state_dict, kl_annealing_iters, zero_kl_iters, max_kl_factor,
+         init_scale):
     if torch.cuda.is_available():
         device = torch.device("cuda:0")
         torch.cuda.set_device(device)
@@ -657,7 +660,8 @@ def main(inference, n_iter, save_state_dict, load_state_dict, kl_annealing_iters
         )
         device = torch.device("cpu")
 
-    target_cameras, target_images, target_silhouettes = generate_cow_renders(num_views=40, azimuth_range=180)
+    target_cameras, target_images, target_silhouettes = generate_cow_renders(
+        num_views=30, azimuth_low=-180, azimuth_high=90)
     print(f'Generated {len(target_images)} images/silhouettes/cameras.')
 
     # render_size describes the size of both sides of the
@@ -743,7 +747,7 @@ def main(inference, n_iter, save_state_dict, load_state_dict, kl_annealing_iters
         guide = partial(pyro.infer.autoguide.AutoDelta,
                         init_loc_fn=tyxe.guides.SitewiseInitializer.from_net(neural_radiance_field_net))
     elif inference == "mean-field":
-        guide = partial(tyxe.guides.ParameterwiseDiagonalNormal, init_scale=1e-2,
+        guide = partial(tyxe.guides.ParameterwiseDiagonalNormal, init_scale=init_scale,
                         init_loc_fn=tyxe.guides.SitewiseInitializer.from_net(neural_radiance_field_net))
         test_samples = 8
     else:
@@ -769,9 +773,9 @@ def main(inference, n_iter, save_state_dict, load_state_dict, kl_annealing_iters
     # Init the loss history buffers.
     loss_history_color, loss_history_sil = [], []
 
-    if kl_annealing_iters > 0:
+    if kl_annealing_iters > 0 or zero_kl_iters > 0:
         kl_factor = 0.
-        kl_annealing_rate = max_kl_factor / kl_annealing_iters
+        kl_annealing_rate = max_kl_factor / min(kl_annealing_iters, 1)
     else:
         kl_factor = max_kl_factor
         kl_annealing_rate = 0.
@@ -864,7 +868,8 @@ def main(inference, n_iter, save_state_dict, load_state_dict, kl_annealing_iters
         optimizer.step()
 
         # TYXE comment: anneal the kl rate
-        kl_factor = min(max_kl_factor, kl_factor + kl_annealing_rate)
+        if iteration >= zero_kl_iters:
+            kl_factor = min(max_kl_factor, kl_factor + kl_annealing_rate)
 
         # Visualize the full renders every 100 iterations.
         if iteration % 100 == 0:
@@ -891,11 +896,31 @@ def main(inference, n_iter, save_state_dict, load_state_dict, kl_annealing_iters
             plt.close(fig)
 
     with torch.no_grad():
-        rotating_nerf_frames = generate_rotating_nerf(
-            neural_radiance_field, target_cameras, renderer_grid, device, n_frames=3 * 5)
+        rotating_nerf_frames, uncertainty_frames = generate_rotating_nerf(
+            neural_radiance_field, target_cameras, renderer_grid, device, n_frames=3 * 5, num_forward=test_samples)
 
-    image_grid(rotating_nerf_frames.clamp(0., 1.).cpu().numpy(), rows=3, cols=5, rgb=True, fill=True)
-    plt.savefig("nerf/final_image_grid.png")
+    # image_grid(rotating_nerf_frames.clamp(0., 1.).cpu().numpy(), rows=3, cols=5, rgb=True, fill=True)
+    # plt.savefig("nerf/final_image_grid.png")
+    # plt.close()
+
+    # image_grid(torch.stack(4 * [uncertainty_frames], dim=-1).cpu().numpy(),
+    #            rows=3, cols=5, rgb=False, cmap="hot", vmax=0.75 ** 0.5)
+    # plt.savefig("nerf/final_image_uncertainty.png")
+    for i, (img, uncertainty) in enumerate(zip(
+            rotating_nerf_frames.clamp(0., 1.).cpu().numpy(), uncertainty_frames.cpu().numpy())):
+        f, ax = plt.subplots(figsize=(1.625, 1.625))
+        f.subplots_adjust(0, 0, 1, 1)
+        ax.imshow(img)
+        ax.set_axis_off()
+        f.savefig(f"nerf/final_image{i}.jpg", bbox_inches="tight", pad_inches=0)
+        plt.close(f)
+
+        f, ax = plt.subplots(figsize=(1.625, 1.625))
+        f.subplots_adjust(0, 0, 1, 1)
+        ax.imshow(uncertainty, cmap="hot", vmax=0.75 ** 0.5)
+        ax.set_axis_off()
+        f.savefig(f"nerf/final_uncertainty{i}.jpg", bbox_inches="tight", pad_inches=0)
+        plt.close(f)
 
     if save_state_dict is not None:
         if inference != "ml":
@@ -911,5 +936,7 @@ if __name__ == '__main__':
     parser.add_argument("--save-state-dict")
     parser.add_argument("--load-state-dict")
     parser.add_argument("--kl-annealing-iters", type=int, default=0)
+    parser.add_argument("--zero-kl-iters", type=int, default=0)
     parser.add_argument("--max-kl-factor", type=float, default=1.)
+    parser.add_argument("--init-scale", type=float, default=1e-2)
     main(**vars(parser.parse_args()))
