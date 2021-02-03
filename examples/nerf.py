@@ -660,6 +660,125 @@ def generate_rotating_nerf(neural_radiance_field, target_cameras, renderer_grid,
     return torch.cat(frames), torch.cat(uncertainties)
 
 
+def eval_data():
+    test_cameras, test_images, test_silhouettes = generate_cow_renders(
+        num_views=30, azimuth_low=91, azimuth_high=180)
+    print(f'Generated {len(test_images)} images/silhouettes/cameras.')
+
+    # render_size describes the size of both sides of the
+    # rendered images in pixels. Since an advantage of
+    # Neural Radiance Fields are high quality renders
+    # with a significant amount of details, we render
+    # the implicit function at double the size of
+    # target images.
+    render_size = test_images.shape[1] * 2
+
+    # Our rendered scene is centered around (0,0,0)
+    # and is enclosed inside a bounding box
+    # whose side is roughly equal to 3.0 (world units).
+    volume_extent_world = 3.0
+
+    # 1) Instantiate the raysamplers.
+
+    # Here, NDCGridRaysampler generates a rectangular image
+    # grid of rays whose coordinates follow the PyTorch3d
+    # coordinate conventions.
+    raysampler_grid = NDCGridRaysampler(
+        image_height=render_size,
+        image_width=render_size,
+        n_pts_per_ray=128,
+        min_depth=0.1,
+        max_depth=volume_extent_world,
+    )
+
+    # MonteCarloRaysampler generates a random subset
+    # of `n_rays_per_image` rays emitted from the image plane.
+    raysampler_mc = MonteCarloRaysampler(
+        min_x=-1.0,
+        max_x=1.0,
+        min_y=-1.0,
+        max_y=1.0,
+        n_rays_per_image=750,
+        n_pts_per_ray=128,
+        min_depth=0.1,
+        max_depth=volume_extent_world,
+    )
+
+    # 2) Instantiate the raymarcher.
+    # Here, we use the standard EmissionAbsorptionRaymarcher
+    # which marches along each ray in order to render
+    # the ray into a single 3D color vector
+    # and an opacity scalar.
+    raymarcher = EmissionAbsorptionRaymarcher()
+
+    # Finally, instantiate the implicit renders
+    # for both raysamplers.
+    renderer_grid = ImplicitRenderer(
+        raysampler=raysampler_grid, raymarcher=raymarcher,
+    )
+    renderer_mc = ImplicitRenderer(
+        raysampler=raysampler_mc, raymarcher=raymarcher,
+    )
+
+    # First move all relevant variables to the correct device.
+    renderer_grid = renderer_grid.to(device)
+    renderer_mc = renderer_mc.to(device)
+    test_cameras = test_cameras.to(device)
+    test_images = test_images.to(device)
+    test_silhouettes = test_silhouettes.to(device)
+
+    # Sample random batch indices.
+    batch_idx = torch.randperm(len(test_cameras))[:batch_size]
+
+    # Sample the minibatch of cameras.
+    batch_cameras = FoVPerspectiveCameras(
+        R=test_cameras.R[batch_idx],
+        T=test_cameras.T[batch_idx],
+        znear=test_cameras.znear[batch_idx],
+        zfar=test_cameras.zfar[batch_idx],
+        aspect_ratio=test_cameras.aspect_ratio[batch_idx],
+        fov=test_cameras.fov[batch_idx],
+        device=device,
+    )
+
+    # Evaluate the nerf model.
+    rendered_images_silhouettes, sampled_rays = renderer_mc(
+        cameras=batch_cameras,
+        volumetric_function=neural_radiance_field
+    )
+    rendered_images, rendered_silhouettes = (
+        rendered_images_silhouettes.split([3, 1], dim=-1)
+    )
+
+
+    # Compute the silhoutte error as the mean huber
+    # loss between the predicted masks and the
+    # sampled target silhouettes.
+    silhouettes_at_rays = sample_images_at_mc_locs(
+        target_silhouettes[batch_idx, ..., None],
+        sampled_rays.xys
+    )
+    sil_err = huber(
+        rendered_silhouettes,
+        silhouettes_at_rays,
+    ).abs().mean()
+
+    # Compute the color error as the mean huber
+    # loss between the rendered colors and the
+    # sampled target images.
+    colors_at_rays = sample_images_at_mc_locs(
+        target_images[batch_idx],
+        sampled_rays.xys
+    )
+    color_err = huber(
+        rendered_images,
+        colors_at_rays,
+    ).abs().mean()
+
+    with torch.no_grad():
+        rotating_nerf_frames, uncertainty_frames = generate_rotating_nerf(
+            neural_radiance_field, test_cameras, renderer_grid, device, n_frames=3 * 5, num_forward=test_samples)
+
 def main(inference, n_iter, save_state_dict, load_state_dict, kl_annealing_iters, zero_kl_iters, max_kl_factor,
          init_scale):
     if torch.cuda.is_available():
