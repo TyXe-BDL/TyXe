@@ -59,7 +59,7 @@ def make_net(dataset, architecture):
 
 
 def main(dataset, architecture, inference, train_batch_size, test_batch_size, local_reparameterization, flipout,
-         num_epochs, test_samples, max_guide_scale, rank, root, seed, output_dir, pretrained_weights, scale_only):
+         num_epochs, test_samples, max_guide_scale, rank, root, seed, output_dir, pretrained_weights, scale_only, lr, milestones, gamma):
     pyro.set_rng_seed(seed)
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
@@ -118,7 +118,12 @@ def main(dataset, architecture, inference, train_batch_size, test_batch_size, lo
         fit_ctxt = tyxe.poutine.flipout
     else:
         fit_ctxt = contextlib.nullcontext
-    optim = pyro.optim.Adam({"lr": 1e-3})
+
+    if milestones is None:
+        optim = pyro.optim.Adam({"lr": lr})
+    else:
+        optimizer = torch.optim.Adam
+        optim = pyro.optim.MultiStepLR({"optimizer": optimizer, "optim_args": {"lr": lr}, "milestones": milestones, "gamma": gamma})
 
     def callback(b, i, avg_elbo):
         avg_err, avg_ll = 0., 0.
@@ -168,5 +173,10 @@ if __name__ == '__main__':
     parser.add_argument("--output-dir")
     parser.add_argument("--pretrained-weights")
     parser.add_argument("--scale-only", action="store_true")
+
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--milestones", type=lambda s: list(map(int, s.split(","))))
+    parser.add_argument("--gamma", type=float, default=0.1)
+
 
     main(**vars((parser.parse_args())))
