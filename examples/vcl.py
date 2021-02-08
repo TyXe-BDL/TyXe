@@ -110,7 +110,7 @@ def make_cifar_dataloaders(root, train_batch_size, test_batch_size):
     return train_loaders, test_loaders
 
 
-def main(root, dataset):
+def main(root, dataset, inference):
     train_batch_size = 250
     test_batch_size = 1000
 
@@ -128,10 +128,17 @@ def main(root, dataset):
         raise RuntimeError("Unreachable")
 
     net.to(DEVICE)
-    prior = tyxe.priors.IIDPrior(dist.Normal(torch.tensor(0., device=DEVICE), torch.tensor(1., device=DEVICE)),
-                                 expose_all=False, hide_modules=[net.Head])
-    guide = functools.partial(tyxe.guides.ParameterwiseDiagonalNormal, init_scale=1e-4,
-                              init_loc_fn=tyxe.guides.SitewiseInitializer.from_net(net))
+    if inference == "mean-field":
+        prior = tyxe.priors.IIDPrior(dist.Normal(torch.tensor(0., device=DEVICE), torch.tensor(1., device=DEVICE)),
+                                     expose_all=False, hide_modules=[net.Head])
+        guide = functools.partial(tyxe.guides.ParameterwiseDiagonalNormal, init_scale=1e-4,
+                                  init_loc_fn=tyxe.guides.SitewiseInitializer.from_net(net))
+        test_samples = 8
+    elif inference == "ml":
+        prior = tyxe.priors.IIDPrior(dist.Normal(0, 1), expose_all=False, hide_all=True)
+        guide = None
+    else:
+        raise RuntimeError("Unreachable")
     bnn = tyxe.VariationalBNN(net, prior, obs, guide)
 
     n_tasks = len(train_loaders)
@@ -165,13 +172,15 @@ def main(root, dataset):
         print("\t".join(["Error"] + [f"Task {j}" for j in range(1, i+1)]))
         print("\t" + "\t".join([f"{100 * e:.2f}%" for e in test_errors[i-1, :i]]))
 
-        bnn.update_prior(tyxe.priors.DictPrior(bnn.net_guide.get_detached_distributions(
-            tyxe.util.pyro_sample_sites(bnn.net))))
+        if inference == "mean-field":
+            bnn.update_prior(tyxe.priors.DictPrior(bnn.net_guide.get_detached_distributions(
+                tyxe.util.pyro_sample_sites(bnn.net))))
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", default=ROOT)
     parser.add_argument("--dataset", choices=["mnist", "cifar"], required=True)
+    parser.add_argument("--inference", choices=["mean-field", "ml"], required=True)
 
     main(**vars(parser.parse_args()))
