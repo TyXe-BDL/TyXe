@@ -40,17 +40,17 @@ class Likelihood(PyroModule):
         method when using mini-batches. May be None to disable rescaling.
     :param int event_dim: Number of dimensions of the predictive distribution to be interpreted as independent.
     :param str name: Base name of the PyroModule.
-    :param str observation_name: Site name of the pyro sample for the data in forward."""
+    :param str data_name: Site name of the pyro sample for the data in forward."""
 
-    def __init__(self, dataset_size, event_dim=0, name="", observation_name="obs"):
+    def __init__(self, dataset_size, event_dim=0, name="", data_name="data"):
         super().__init__(name)
         self.dataset_size = dataset_size
         self.event_dim = event_dim
-        self._obs_name = observation_name
+        self._data_name = data_name
 
     @property
-    def observation_name(self):
-        return self.var_name(self._obs_name)
+    def data_name(self):
+        return self.var_name(self._data_name)
 
     def var_name(self, name):
         return _make_name(self._pyro_name, name)
@@ -64,12 +64,12 @@ class Likelihood(PyroModule):
         predictive_distribution = self.predictive_distribution(predictions)
         if predictive_distribution.batch_shape:
             dataset_size = self.dataset_size if self.dataset_size is not None else len(predictions)
-            with pyro.plate(self.var_name("data"), subsample=predictions, size=dataset_size):
-                return pyro.sample(self.observation_name, predictive_distribution, obs=obs)
+            with pyro.plate(self.data_name+"_plate", subsample=predictions, size=dataset_size):
+                return pyro.sample(self.data_name, predictive_distribution, obs=obs)
         else:
             dataset_size = self.dataset_size if self.dataset_size is not None else 1
             with pyro.poutine.scale(scale=dataset_size):
-                return pyro.sample(self.observation_name, predictive_distribution, obs=obs)
+                return pyro.sample(self.data_name, predictive_distribution, obs=obs)
 
     def log_likelihood(self, predictions, data, aggregation_dim=None, reduction="none"):
         if aggregation_dim is not None:
@@ -109,8 +109,8 @@ class Likelihood(PyroModule):
 class _Discrete(Likelihood):
     """Discrete base class that unifies logic for Bernoulli and Categorical likelihood classes."""
 
-    def __init__(self, dataset_size, logit_predictions=True, event_dim=0, name="", observation_name="obs"):
-        super().__init__(dataset_size, event_dim=event_dim, name=name, observation_name=observation_name)
+    def __init__(self, dataset_size, logit_predictions=True, event_dim=0, name="", data_name="data"):
+        super().__init__(dataset_size, event_dim=event_dim, name=name, data_name=data_name)
         self.logit_predictions = logit_predictions
 
     def base_dist(self, probs=None, logits=None):
@@ -161,8 +161,8 @@ class Categorical(_Discrete):
 class Gaussian(Likelihood):
     """Base class for Gaussian likelihoods."""
 
-    def __init__(self, dataset_size, event_dim=1, name="", observation_name="obs"):
-        super().__init__(dataset_size, event_dim=event_dim, name=name, observation_name=observation_name)
+    def __init__(self, dataset_size, event_dim=1, name="", data_name="data"):
+        super().__init__(dataset_size, event_dim=event_dim, name=name, data_name=data_name)
         self.event_dim = event_dim
 
     def batch_predictive_distribution(self, predictions):
@@ -186,15 +186,10 @@ class HeteroskedasticGaussian(Gaussian):
     means and the second half to the standard deviations (which may be negative, in which case they are passed
     through a softplus function).
 
-    :param int dataset_size: Number of data points in the dataset for rescaling the log likelihood in the forward
-        method when using mini-batches. May be None to disable rescaling.
-    :param bool positive_scale: Whether the predicted scales can be assumed to be positive.
-    :param int event_dim: Number of dimensions of the predictive distribution to be interpreted as independent.
-    :param str name: Base name of the PyroModule.
-    :param str observation_name: Site name of the pyro sample for the data in forward."""
+    :param bool positive_scale: Whether the predicted scales can be assumed to be positive."""
 
-    def __init__(self, dataset_size, positive_scale=False, event_dim=1, name="", observation_name="obs"):
-        super().__init__(dataset_size, event_dim=event_dim, name=name, observation_name=observation_name)
+    def __init__(self, dataset_size, positive_scale=False, event_dim=1, name="", data_name="data"):
+        super().__init__(dataset_size, event_dim=event_dim, name=name, data_name=data_name)
         self.positive_scale = positive_scale
 
     def aggregate_predictions(self, predictions, dim=0):
@@ -221,16 +216,11 @@ class HomoskedasticGaussian(Gaussian):
     or precision may be a distribution, i.e. be unknown and have a prior placed on it for it to be inferred or be a
     PyroParameter in order to be learnable.
 
-    :param int dataset_size: Number of data points in the dataset for rescaling the log likelihood in the forward
-        method when using mini-batches. May be None to disable rescaling.
     :param scale: tensor, parameter or prior distribution for the scale. Mutually exclusive with precision.
-    :param precision: tensor, parameter or prior distribution for the precision. Mutually exclusive with scale.
-    :param int event_dim: Number of dimensions of the predictive distribution to be interpreted as independent.
-    :param str name: Base name of the PyroModule.
-    :param str observation_name: Site name of the pyro sample for the data in forward."""
+    :param precision: tensor, parameter or prior distribution for the precision. Mutually exclusive with scale."""
 
-    def __init__(self, dataset_size, scale=None, precision=None, event_dim=1, name="", observation_name="obs"):
-        super().__init__(dataset_size, event_dim=event_dim, name=name, observation_name=observation_name)
+    def __init__(self, dataset_size, scale=None, precision=None, event_dim=1, name="", data_name="data"):
+        super().__init__(dataset_size, event_dim=event_dim, name=name, data_name=data_name)
         if int(scale is None) + int(precision is None) != 1:
             raise ValueError("Exactly one of scale and precision must be specified")
         elif isinstance(scale, (dist.Distribution, torchdist.Distribution)):

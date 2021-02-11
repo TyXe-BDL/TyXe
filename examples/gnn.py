@@ -132,7 +132,7 @@ def main(inference, lr, num_epochs, milestones):
         nll_list.append(val_nll)
 
     # the mask poutine is needed to only evaluate the log likelihood of the training nodes
-    with tyxe.poutine.selective_mask(mask=train_mask, hide_all=False, expose=["observation_model.obs"]), tyxe.poutine.flipout():
+    with tyxe.poutine.selective_mask(mask=train_mask, hide_all=False, expose=["likelihood.data"]):
         bnn.fit(loader, scheduler, num_epochs, callback, num_particles=1)
 
     min_nll_epoch = torch.tensor(nll_list).argmin().item()

@@ -1,34 +1,77 @@
+"""Adapted version of the NeRF example from pytorch3d. Includes a Bayesian version of NeRF based on TyXe.
+The original notebook is available at: https://github.com/facebookresearch/pytorch3d/blob/master/docs/tutorials/fit_simple_neural_radiance_field.ipynb"""
+
+# LICENSE FROM THE pytorch3D repo:
+# --------------------------------
+# BSD 3-Clause License
+#
+# For PyTorch3D software
+#
+# Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without modification,
+# are permitted provided that the following conditions are met:
+#
+#  * Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+#
+#  * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+#  * Neither the name Facebook nor the names of its contributors may be used to
+#    endorse or promote products derived from this software without specific
+#    prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+# ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+# ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+# END OF LICENSE
+
+
 import argparse
 from functools import partial
 import os
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
-from IPython import display
 from tqdm import tqdm
 from collections import namedtuple
 
 # Data structures and functions for rendering
-from pytorch3d.io import load_objs_as_meshes
-from pytorch3d.structures import Volumes
-from pytorch3d.transforms import so3_exponential_map
-from pytorch3d.renderer import (
-    BlendParams,
-    EmissionAbsorptionRaymarcher,
-    FoVPerspectiveCameras,
-    ImplicitRenderer,
-    look_at_view_transform,
-    MeshRasterizer,
-    MeshRenderer,
-    MonteCarloRaysampler,
-    NDCGridRaysampler,
-    PointLights,
-    RasterizationSettings,
-    RayBundle,
-    ray_bundle_to_ray_points,
-    SoftPhongShader,
-    SoftSilhouetteShader,
-)
+try:
+    from pytorch3d.io import load_objs_as_meshes
+    from pytorch3d.structures import Volumes
+    from pytorch3d.transforms import so3_exponential_map
+    from pytorch3d.renderer import (
+        BlendParams,
+        EmissionAbsorptionRaymarcher,
+        FoVPerspectiveCameras,
+        ImplicitRenderer,
+        look_at_view_transform,
+        MeshRasterizer,
+        MeshRenderer,
+        MonteCarloRaysampler,
+        NDCGridRaysampler,
+        PointLights,
+        RasterizationSettings,
+        RayBundle,
+        ray_bundle_to_ray_points,
+        SoftPhongShader,
+        SoftSilhouetteShader,
+    )
+except ImportError:
+    print("Failed to import from pytorch3d. This is not a dependency of Tyxe and needs to be installed separately. "
+          "You may need to install the nightly rather than the stable version")
+    raise
 
 import pyro
 import pyro.distributions as dist
@@ -625,12 +668,10 @@ def show_full_render(
         ax_.set_title(title_)
     fig.canvas.draw()
     fig.show()
-    display.clear_output(wait=True)
-    display.display(fig)
     return fig
 
 
-def generate_rotating_nerf(neural_radiance_field, target_cameras, renderer_grid, device, n_frames=50, num_forward=1):
+def generate_rotating_nerf(neural_radiance_field, target_cameras, renderer_grid, device, n_frames=50, num_forward=1, save_visualization=False):
     logRs = torch.zeros(n_frames, 3, device=device)
     logRs[:, 1] = torch.linspace(-3.14, 3.14, n_frames, device=device)
     Rs = so3_exponential_map(logRs)
@@ -638,6 +679,7 @@ def generate_rotating_nerf(neural_radiance_field, target_cameras, renderer_grid,
     Ts[:, 2] = 2.7
     frames = []
     uncertainties = []
+    path = f"nerf_vis/view{i}/sample{j}" if save_visualization else None
     print('Rendering rotating NeRF ...')
     for i, (R, T) in enumerate(zip(tqdm(Rs), Ts)):
         camera = FoVPerspectiveCameras(
@@ -653,7 +695,7 @@ def generate_rotating_nerf(neural_radiance_field, target_cameras, renderer_grid,
         # and the batched_forward function of neural_radiance_field.
         frame_samples = torch.stack([renderer_grid(
                 cameras=camera,
-                volumetric_function=partial(batched_forward, net=neural_radiance_field, path=f"nerf_vis/view{i}/sample{j}")
+                volumetric_function=partial(batched_forward, net=neural_radiance_field, path=path)
             )[0][..., :3] for j in range(num_forward)])
         frames.append(frame_samples.mean(0))
         uncertainties.append(frame_samples.var(0).sum(-1).sqrt() if num_forward > 1 else torch.zeros_like(frame_samples[0, ..., 0]))
@@ -661,7 +703,7 @@ def generate_rotating_nerf(neural_radiance_field, target_cameras, renderer_grid,
 
 
 def main(inference, n_iter, save_state_dict, load_state_dict, kl_annealing_iters, zero_kl_iters, max_kl_factor,
-         init_scale):
+         init_scale, save_visualization):
     if torch.cuda.is_available():
         device = torch.device("cuda:0")
         torch.cuda.set_device(device)
@@ -910,15 +952,15 @@ def main(inference, n_iter, save_state_dict, load_state_dict, kl_annealing_iters
 
     with torch.no_grad():
         rotating_nerf_frames, uncertainty_frames = generate_rotating_nerf(
-            neural_radiance_field, target_cameras, renderer_grid, device, n_frames=3 * 5, num_forward=test_samples)
+            neural_radiance_field,
+            target_cameras,
+            renderer_grid,
+            device,
+            n_frames=3 * 5,
+            num_forward=test_samples,
+            save_visualization=save_visualization
+        )
 
-    # image_grid(rotating_nerf_frames.clamp(0., 1.).cpu().numpy(), rows=3, cols=5, rgb=True, fill=True)
-    # plt.savefig("nerf/final_image_grid.png")
-    # plt.close()
-
-    # image_grid(torch.stack(4 * [uncertainty_frames], dim=-1).cpu().numpy(),
-    #            rows=3, cols=5, rgb=False, cmap="hot", vmax=0.75 ** 0.5)
-    # plt.savefig("nerf/final_image_uncertainty.png")
     for i, (img, uncertainty) in enumerate(zip(
             rotating_nerf_frames.clamp(0., 1.).cpu().numpy(), uncertainty_frames.cpu().numpy())):
         f, ax = plt.subplots(figsize=(1.625, 1.625))
@@ -937,7 +979,7 @@ def main(inference, n_iter, save_state_dict, load_state_dict, kl_annealing_iters
 
     if save_state_dict is not None:
         if inference != "ml":
-            raise ValueError("Can only save a state dict for maximum likelihood inference")
+            raise ValueError("Saving the state dict is only available for ml inference for now.")
         state_dict = dict(neural_radiance_field.named_pytorch_parameters(dummy_data))
         torch.save(state_dict, save_state_dict)
 
@@ -954,6 +996,7 @@ def main(inference, n_iter, save_state_dict, load_state_dict, kl_annealing_iters
     test_images = test_images.to(device)
     test_silhouettes = test_silhouettes.to(device)
 
+    # TODO remove duplication from training code for test error
     with torch.no_grad():
         sil_err = 0.
         color_err = 0.
@@ -1027,4 +1070,5 @@ if __name__ == '__main__':
     parser.add_argument("--zero-kl-iters", type=int, default=0)
     parser.add_argument("--max-kl-factor", type=float, default=1.)
     parser.add_argument("--init-scale", type=float, default=1e-2)
+    parser.add_argument("--save-visualization", action="store_true")
     main(**vars(parser.parse_args()))

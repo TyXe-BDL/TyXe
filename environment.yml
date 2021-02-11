@@ -1,0 +1,20 @@
+name: tyxe
+channels:
+  - pytorch
+  - dglteam
+  - defaults
+dependencies:
+  - python=3.8.2
+  - pytorch=1.7.0
+  - torchvision=0.8.1
+  - cudatoolkit=11.0
+  - numpy=1.19.2
+  - scipy=1.5.2
+  - tqdm=4.48.2
+  - matplotlib=3.3.1
+  - pytest=6.1.2
+  - dgl-cuda11.0
+  - requests=2.25.1
+  - pip
+  - pip:
+    - pyro-ppl

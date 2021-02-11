@@ -8,5 +8,9 @@ setup(
     author_email='j.ritter@cs.ucl.ac.uk',
     description='BNNs for pytorch using pyro.',
     packages=find_packages(),
-    install_requires=['pyro-ppl >= 1.3.0'],
+    install_requires=[
+        'torch >= 1.7.0',
+        'torchvision >= 0.8.1',
+        'pyro-ppl >= 1.4.0'
+    ],
 )

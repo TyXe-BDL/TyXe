@@ -8,8 +8,8 @@ Defining a BNN in TyXe takes as little as 5 lines of code:
 ```
 net = nn.Sequential(nn.Linear(1, 50), nn.Tanh(), nn.Linear(50, 1))
 prior = tyxe.priors.IIDPrior(dist.Normal(0, 1))
-likelihood = tyxe.observation_models.HomoskedasticGaussian(scale=0.1)
-inference = pyro.infer.autoguides.AutoDiagonalNormal
+likelihood = tyxe.likelihoods.HomoskedasticGaussian(scale=0.1)
+inference = tyxe.guides.AutoNormal
 bnn = tyxe.VariationalBNN(net, prior, likelihood, inference)
 ```
 
@@ -97,3 +97,13 @@ This helps, for example in learning the parameters of BatchNorm layers determini
 
 `tyxe.observation_models` contains classes that wrap the most common `torch.distributions` for specifying noise models of data to   
 
+
+# Installation
+
+We recommend installing TyXe using conda with the provided `environment.yml`, which also installs all the dependencies for the examples except for Pytorch3d, which needs to be added manually.
+The environment assumes that you are using CUDA11.0, if this is not the case, simply change the `cudatoolkit` and `dgl-cuda` versions before running:
+```
+conda env create -f environment.yml
+conda activate tyxeicml2021
+pip install -e .
+```

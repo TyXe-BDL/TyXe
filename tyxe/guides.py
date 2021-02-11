@@ -16,6 +16,12 @@ import pyro.util as pyutil
 from . import util
 
 
+def _get_base_dist(distribution):
+    while isinstance(distribution, dist.Independent):
+        distribution = distribution.base_dist
+    return distribution
+
+
 def init_to_constant(site, c):
     """Helper function to set site value to a constant value."""
     site_fn = site["fn"]
@@ -137,8 +143,9 @@ class AutoNormal(ag.AutoGuide):
             loc = self.get_loc(name).detach().clone()
             scale = self.get_scale(name).detach().clone()
             fn = dist.Normal(loc, scale).to_event(max(loc.dim(), scale.dim()))
-            if site["fn"].support is not dist.constraints.real:
-                fn = dist.TransformedDistribution(fn, biject_to(site["fn"].support))
+            base_fn = _get_base_dist(site["fn"])
+            if base_fn.support is not dist.constraints.real:
+                fn = dist.TransformedDistribution(fn, biject_to(base_fn.support))
             result[name] = fn
         return result
 
@@ -156,8 +163,9 @@ class AutoNormal(ag.AutoGuide):
                 loc = self.get_loc(name)
                 scale = self.get_scale(name)
                 fn = dist.Normal(loc, scale).to_event(site["fn"].event_dim)
-                if site["fn"].support is not dist.constraints.real:
-                    fn = dist.TransformedDistribution(fn, biject_to(site["fn"].support))
+                base_fn = _get_base_dist(site["fn"])
+                if base_fn.support is not dist.constraints.real:
+                    fn = dist.TransformedDistribution(fn, base_fn.support)
                 result[name] = pyro.sample(name, fn)
         return result
 

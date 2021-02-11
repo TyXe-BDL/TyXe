@@ -85,6 +85,8 @@ def main(dataset, architecture, inference, train_batch_size, test_batch_size, lo
                                   init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(net), init_scale=1e-4,
                                   max_guide_scale=max_guide_scale, train_loc=not scale_only)
     elif inference.startswith("last-layer"):
+        if pretrained_weights is None:
+            raise ValueError("Asked to do last-layer inference, but no pre-trained weights were provided.")
         # turning parameters except for last layer in buffers to avoid training them
         # this might be avoidable via poutine.block
         for module in net.modules():
@@ -103,11 +105,13 @@ def main(dataset, architecture, inference, train_batch_size, test_batch_size, lo
         elif inference == "last-layer-low-rank":
             guide = functools.partial(ag.AutoLowRankMultivariateNormal, rank=rank,
                                       init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(net), init_scale=1e-4)
+        else:
+            raise RuntimeError("Unreachable")
     else:
         raise RuntimeError("Unreachable")
 
     prior = tyxe.priors.IIDPrior(dist.Normal(torch.zeros(1, device=device), torch.ones(1, device=device)),
-                                  **prior_kwargs)
+                                 **prior_kwargs)
     bnn = tyxe.VariationalBNN(net, prior, observation_model, guide)
 
     if local_reparameterization:
@@ -156,8 +160,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", default="cifar10", choices=["cifar10", "cifar100"])
     parser.add_argument("--architecture", default="resnet18", choices=resnets)
-    parser.add_argument("--inference", required=True, choices=
-        ["ml", "map", "mean-field", "last-layer-mean-field", "last-layer-full", "last-layer-low-rank"])
+    parser.add_argument("--inference", required=True, choices=[
+        "ml", "map", "mean-field", "last-layer-mean-field", "last-layer-full", "last-layer-low-rank"])
 
     parser.add_argument("--train-batch-size", type=int, default=100)
     parser.add_argument("--test-batch-size", type=int, default=1000)
@@ -177,6 +181,5 @@ if __name__ == '__main__':
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--milestones", type=lambda s: list(map(int, s.split(","))))
     parser.add_argument("--gamma", type=float, default=0.1)
-
 
     main(**vars((parser.parse_args())))
