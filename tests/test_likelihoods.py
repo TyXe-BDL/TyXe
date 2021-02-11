@@ -219,7 +219,7 @@ def test_forward_batch():
     lik = Bernoulli(event_dim=1, dataset_size=10, logit_predictions=True)
     predictions = torch.randn(shape)
     tr = pyro.poutine.trace(lik).get_trace(predictions)
-    assert tr.nodes["obs"]["scale"] == 2.5
+    assert tr.nodes["data"]["scale"] == 2.5
 
 
 def test_forward_single():
@@ -227,7 +227,7 @@ def test_forward_single():
     lik = Bernoulli(event_dim=1, dataset_size=10, logit_predictions=True)
     predictions = torch.randn(shape)
     tr = pyro.poutine.trace(lik).get_trace(predictions)
-    assert tr.nodes["obs"]["scale"] == 10
+    assert tr.nodes["data"]["scale"] == 10
 
 
 def test_hom_gaussian_dist(): pass

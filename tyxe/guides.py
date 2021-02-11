@@ -165,7 +165,7 @@ class AutoNormal(ag.AutoGuide):
                 fn = dist.Normal(loc, scale).to_event(site["fn"].event_dim)
                 base_fn = _get_base_dist(site["fn"])
                 if base_fn.support is not dist.constraints.real:
-                    fn = dist.TransformedDistribution(fn, base_fn.support)
+                    fn = dist.TransformedDistribution(fn, biject_to(base_fn.support))
                 result[name] = pyro.sample(name, fn)
         return result
 
