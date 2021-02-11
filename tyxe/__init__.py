@@ -1,5 +1,5 @@
 from . import guides
-from . import observation_models
+from . import likelihoods
 from . import poutine
 from . import priors
 from . import util

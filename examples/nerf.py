@@ -759,10 +759,10 @@ def main(inference, n_iter, save_state_dict, load_state_dict, kl_annealing_iters
         guide = None
     elif inference == "map":
         guide = partial(pyro.infer.autoguide.AutoDelta,
-                        init_loc_fn=tyxe.guides.SitewiseInitializer.from_net(neural_radiance_field_net))
+                        init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(neural_radiance_field_net))
     elif inference == "mean-field":
-        guide = partial(tyxe.guides.ParameterwiseDiagonalNormal, init_scale=init_scale,
-                        init_loc_fn=tyxe.guides.SitewiseInitializer.from_net(neural_radiance_field_net))
+        guide = partial(tyxe.guides.AutoNormal, init_scale=init_scale,
+                        init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(neural_radiance_field_net))
         test_samples = 8
     else:
         raise RuntimeError(f"Unreachable inference: {inference}")

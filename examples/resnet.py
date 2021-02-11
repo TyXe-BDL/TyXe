@@ -70,7 +70,7 @@ def main(dataset, architecture, inference, train_batch_size, test_batch_size, lo
         sd = torch.load(pretrained_weights, map_location=device)
         net.load_state_dict(sd)
 
-    observation_model = tyxe.observation_models.Categorical(len(train_loader.sampler))
+    observation_model = tyxe.likelihoods.Categorical(len(train_loader.sampler))
 
     prior_kwargs = dict(expose_all=False, hide_module_types=(nn.BatchNorm2d,))
     if inference == "ml":
@@ -79,10 +79,10 @@ def main(dataset, architecture, inference, train_batch_size, test_batch_size, lo
         prior_kwargs["hide_all"] = True
     elif inference == "map":
         test_samples = 1
-        guide = functools.partial(ag.AutoDelta, init_loc_fn=tyxe.guides.SitewiseInitializer.from_net(net))
+        guide = functools.partial(ag.AutoDelta, init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(net))
     elif inference == "mean-field":
-        guide = functools.partial(tyxe.guides.ParameterwiseDiagonalNormal,
-                                  init_loc_fn=tyxe.guides.SitewiseInitializer.from_net(net), init_scale=1e-4,
+        guide = functools.partial(tyxe.guides.AutoNormal,
+                                  init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(net), init_scale=1e-4,
                                   max_guide_scale=max_guide_scale, train_loc=not scale_only)
     elif inference.startswith("last-layer"):
         # turning parameters except for last layer in buffers to avoid training them
@@ -95,14 +95,14 @@ def main(dataset, architecture, inference, train_batch_size, test_batch_size, lo
         del prior_kwargs['hide_module_types']
         prior_kwargs["expose_modules"] = [net.fc]
         if inference == "last-layer-mean-field":
-            guide = functools.partial(tyxe.guides.ParameterwiseDiagonalNormal,
-                                      init_loc_fn=tyxe.guides.SitewiseInitializer.from_net(net), init_scale=1e-4)
+            guide = functools.partial(tyxe.guides.AutoNormal,
+                                      init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(net), init_scale=1e-4)
         elif inference == "last-layer-full":
             guide = functools.partial(ag.AutoMultivariateNormal,
-                                      init_loc_fn=tyxe.guides.SitewiseInitializer.from_net(net), init_scale=1e-4)
+                                      init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(net), init_scale=1e-4)
         elif inference == "last-layer-low-rank":
             guide = functools.partial(ag.AutoLowRankMultivariateNormal, rank=rank,
-                                      init_loc_fn=tyxe.guides.SitewiseInitializer.from_net(net), init_scale=1e-4)
+                                      init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(net), init_scale=1e-4)
     else:
         raise RuntimeError("Unreachable")
 

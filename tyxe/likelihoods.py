@@ -9,6 +9,9 @@ import pyro.distributions as dist
 from pyro.nn import PyroModule, PyroSample
 
 
+__all__ = ["Bernoulli", "Categorical", "HomoskedasticGaussian", "HeteroskedasticGaussian"]
+
+
 def inverse_softplus(t):
     return t.expm1().log()
 
@@ -28,7 +31,16 @@ def _make_name(prefix, suffix):
     return ".".join([prefix, suffix]) if prefix else suffix
 
 
-class ObservationModel(PyroModule):
+class Likelihood(PyroModule):
+    """Base class for BNN likelihoods. PyroModule wrapper around the most common distribution class for data noise.
+    The forward method draws a pyro sample to be used in a model function given some predictions. log_likelihood and
+    error are utility functions for evaluation.
+
+    :param int dataset_size: Number of data points in the dataset for rescaling the log likelihood in the forward
+        method when using mini-batches. May be None to disable rescaling.
+    :param int event_dim: Number of dimensions of the predictive distribution to be interpreted as independent.
+    :param str name: Base name of the PyroModule.
+    :param str observation_name: Site name of the pyro sample for the data in forward."""
 
     def __init__(self, dataset_size, event_dim=0, name="", observation_name="obs"):
         super().__init__(name)
@@ -44,6 +56,11 @@ class ObservationModel(PyroModule):
         return _make_name(self._pyro_name, name)
 
     def forward(self, predictions, obs=None):
+        """Executes a pyro sample statement to sample from the distribution corresponding to the likelihood class
+        given some predictions. The values of the sample can set to some optional observations obs.
+
+        :param torch.Tensor predictions: tensor of predictions.
+        :param torch.Tensor obs: optional known values for the samples."""
         predictive_distribution = self.predictive_distribution(predictions)
         if predictive_distribution.batch_shape:
             dataset_size = self.dataset_size if self.dataset_size is not None else len(predictions)
@@ -51,7 +68,7 @@ class ObservationModel(PyroModule):
                 return pyro.sample(self.observation_name, predictive_distribution, obs=obs)
         else:
             dataset_size = self.dataset_size if self.dataset_size is not None else 1
-            with pyro.poutine.scale(scale=dataset_size ** -1):
+            with pyro.poutine.scale(scale=dataset_size):
                 return pyro.sample(self.observation_name, predictive_distribution, obs=obs)
 
     def log_likelihood(self, predictions, data, aggregation_dim=None, reduction="none"):
@@ -63,7 +80,7 @@ class ObservationModel(PyroModule):
     def error(self, predictions, data, aggregation_dim=None, reduction="none"):
         if aggregation_dim is not None:
             predictions = self.aggregate_predictions(predictions, aggregation_dim)
-        errors = self._calc_error(self._point_predictions(predictions), data)
+        errors = dist.util.sum_rightmost(self._calc_error(self._point_predictions(predictions), data), self.event_dim)
         return _reduce(errors, reduction)
 
     def sample(self, predictions, sample_shape=torch.Size()):
@@ -73,20 +90,24 @@ class ObservationModel(PyroModule):
         return self.batch_predictive_distribution(predictions).to_event(self.event_dim)
 
     def batch_predictive_distribution(self, predictions):
+        """Returns a batched object of predictive distributions."""
         raise NotImplementedError
 
     def aggregate_predictions(self, predictions, dim=0):
+        """Aggregates multiple samples of predictions, e.g. averages for Gaussian or probabilities."""
         raise NotImplementedError
 
     def _point_predictions(self, predictions):
+        """Point predictions without noise, e.g. hard class labels for Bernoulli or Categorical."""
         raise NotImplementedError
 
     def _calc_error(self, point_predictions, data):
+        """Typical error measure, e.g. squared errors for Gaussians or number of mis-classifications for Categorical."""
         raise NotImplementedError
 
 
-# TODO add required binary class attribute to move _aggregate_predictions method from Bernoulli/Categorical to _Discrete
-class _Discrete(ObservationModel):
+class _Discrete(Likelihood):
+    """Discrete base class that unifies logic for Bernoulli and Categorical likelihood classes."""
 
     def __init__(self, dataset_size, logit_predictions=True, event_dim=0, name="", observation_name="obs"):
         super().__init__(dataset_size, event_dim=event_dim, name=name, observation_name=observation_name)
@@ -101,34 +122,44 @@ class _Discrete(ObservationModel):
     def _calc_error(self, point_predictions, data):
         return point_predictions.ne(data).float()
 
+    def aggregate_predictions(self, predictions, dim=0):
+        probs = dist_utils.logits_to_probs(predictions, is_binary=self.is_binary) if self.logit_predictions else predictions
+        avg_probs = probs.mean(dim)
+        return dist_utils.probs_to_logits(avg_probs, is_binary=self.is_binary) if self.logit_predictions else avg_probs
+
+    @property
+    def is_binary(self):
+        raise NotImplementedError
+
 
 class Bernoulli(_Discrete):
+    """Bernoulli likelihood for binary observations."""
 
     base_dist = dist.Bernoulli
 
     def _point_predictions(self, predictions):
         return predictions.gt(0.) if self.logit_predictions else predictions.gt(0.5)
 
-    def aggregate_predictions(self, predictions, dim=0):
-        probs = dist_utils.logits_to_probs(predictions, is_binary=True) if self.logit_predictions else predictions
-        avg_probs = probs.mean(dim)
-        return dist_utils.probs_to_logits(avg_probs, is_binary=True) if self.logit_predictions else avg_probs
+    @property
+    def is_binary(self):
+        return True
 
 
 class Categorical(_Discrete):
+    """Categorical likelihood for multi-class observations."""
 
     base_dist = dist.Categorical
 
     def _point_predictions(self, predictions):
         return predictions.argmax(-1)
 
-    def aggregate_predictions(self, predictions, dim=0):
-        probs = dist_utils.logits_to_probs(predictions, is_binary=False) if self.logit_predictions else predictions
-        avg_probs = probs.mean(dim)
-        return dist_utils.probs_to_logits(avg_probs, is_binary=False) if self.logit_predictions else avg_probs
+    @property
+    def is_binary(self):
+        return False
 
 
-class Gaussian(ObservationModel):
+class Gaussian(Likelihood):
+    """Base class for Gaussian likelihoods."""
 
     def __init__(self, dataset_size, event_dim=1, name="", observation_name="obs"):
         super().__init__(dataset_size, event_dim=event_dim, name=name, observation_name=observation_name)
@@ -149,12 +180,27 @@ class Gaussian(ObservationModel):
 
 
 class HeteroskedasticGaussian(Gaussian):
+    """Heteroskedastic Gaussian likelihood, i.e. Gaussian with data-dependent observation noise that is assumed to be
+    part of the predictions. For d-dimensional observations, the predictions are expected to be 2d, with the tensor
+    of predictions being split in the middle along the final event dim and the first half corresponding to predicted
+    means and the second half to the standard deviations (which may be negative, in which case they are passed
+    through a softplus function).
+
+    :param int dataset_size: Number of data points in the dataset for rescaling the log likelihood in the forward
+        method when using mini-batches. May be None to disable rescaling.
+    :param bool positive_scale: Whether the predicted scales can be assumed to be positive.
+    :param int event_dim: Number of dimensions of the predictive distribution to be interpreted as independent.
+    :param str name: Base name of the PyroModule.
+    :param str observation_name: Site name of the pyro sample for the data in forward."""
 
     def __init__(self, dataset_size, positive_scale=False, event_dim=1, name="", observation_name="obs"):
         super().__init__(dataset_size, event_dim=event_dim, name=name, observation_name=observation_name)
         self.positive_scale = positive_scale
 
     def aggregate_predictions(self, predictions, dim=0):
+        """Aggregates multiple predictions for the same data by averaging them according to their predicted noise.
+        Means with lower predicted noise are given higher weight in the average. Predictive variance is the variance
+        of the means plus the average predicted variance."""
         loc, scale = self._predictive_loc_scale(predictions)
         precision = scale.pow(-2)
         total_precision = precision.sum(dim)
@@ -171,6 +217,17 @@ class HeteroskedasticGaussian(Gaussian):
 
 
 class HomoskedasticGaussian(Gaussian):
+    """Homeskedastic Gaussian likelihood, i.e. a likelihood that assumes the noise to be data-independent. The scale
+    or precision may be a distribution, i.e. be unknown and have a prior placed on it for it to be inferred or be a
+    PyroParameter in order to be learnable.
+
+    :param int dataset_size: Number of data points in the dataset for rescaling the log likelihood in the forward
+        method when using mini-batches. May be None to disable rescaling.
+    :param scale: tensor, parameter or prior distribution for the scale. Mutually exclusive with precision.
+    :param precision: tensor, parameter or prior distribution for the precision. Mutually exclusive with scale.
+    :param int event_dim: Number of dimensions of the predictive distribution to be interpreted as independent.
+    :param str name: Base name of the PyroModule.
+    :param str observation_name: Site name of the pyro sample for the data in forward."""
 
     def __init__(self, dataset_size, scale=None, precision=None, event_dim=1, name="", observation_name="obs"):
         super().__init__(dataset_size, event_dim=event_dim, name=name, observation_name=observation_name)
@@ -207,6 +264,8 @@ class HomoskedasticGaussian(Gaussian):
             return self._precision
 
     def aggregate_predictions(self, predictions, dim=0):
+        """Aggregates multiple predictions for the same data by averaging them. Predictive variance is the variance
+         of the predictions plus the known variance term."""
         loc = predictions.mean(dim)
         scale = predictions.var(dim).add(self.scale ** 2).sqrt()
         return loc, scale

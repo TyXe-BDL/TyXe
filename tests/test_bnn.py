@@ -27,7 +27,7 @@ def bayesian_regression(n, d, weight_precision, noise_precision):
 def get_linear_bnn(n, d, wp, np, guide, variational=True):
     l = nn.Linear(d, 1, bias=False)
     prior = tyxe.priors.IIDPrior(dist.Normal(0, wp ** -0.5))
-    likelihood = tyxe.observation_models.HomoskedasticGaussian(n, precision=np)
+    likelihood = tyxe.likelihoods.HomoskedasticGaussian(n, precision=np)
     if variational:
         return tyxe.VariationalBNN(l, prior, likelihood, guide)
     else:

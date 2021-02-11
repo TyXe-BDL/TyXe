@@ -116,12 +116,12 @@ def main(root, dataset, inference):
 
     if dataset == "cifar":
         net = ConvNet()
-        obs = tyxe.observation_models.Categorical(-1)
+        obs = tyxe.likelihoods.Categorical(-1)
         train_loaders, test_loaders = make_cifar_dataloaders(root, train_batch_size, test_batch_size)
         num_epochs = 60
     elif dataset == "mnist":
         net = FCNet()
-        obs = tyxe.observation_models.Bernoulli(-1, event_dim=1)
+        obs = tyxe.likelihoods.Bernoulli(-1, event_dim=1)
         train_loaders, test_loaders = make_mnist_dataloaders(root, train_batch_size, test_batch_size)
         num_epochs = 600
     else:
@@ -131,8 +131,8 @@ def main(root, dataset, inference):
     if inference == "mean-field":
         prior = tyxe.priors.IIDPrior(dist.Normal(torch.tensor(0., device=DEVICE), torch.tensor(1., device=DEVICE)),
                                      expose_all=False, hide_modules=[net.Head])
-        guide = functools.partial(tyxe.guides.ParameterwiseDiagonalNormal, init_scale=1e-4,
-                                  init_loc_fn=tyxe.guides.SitewiseInitializer.from_net(net))
+        guide = functools.partial(tyxe.guides.AutoNormal, init_scale=1e-4,
+                                  init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(net))
         test_samples = 8
     elif inference == "ml":
         prior = tyxe.priors.IIDPrior(dist.Normal(0, 1), expose_all=False, hide_all=True)

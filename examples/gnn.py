@@ -95,8 +95,8 @@ def main(inference, lr, num_epochs, milestones):
     elif inference == "map":
         guide = pyro.infer.autoguide.AutoDelta
     elif inference == "mean-field":
-        guide = partial(tyxe.guides.ParameterwiseDiagonalNormal, init_scale=1e-4, max_guide_scale=0.3,
-                        init_loc_fn=tyxe.guides.SitewiseInitializer.from_net(net))
+        guide = partial(tyxe.guides.AutoNormal, init_scale=1e-4, max_guide_scale=0.3,
+                        init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(net))
         test_samples = 8
     else:
         raise RuntimeError("Unreachable")
@@ -105,7 +105,7 @@ def main(inference, lr, num_epochs, milestones):
     # the dataset size needs to be set to the **total** number of nodes, since the pyro.plate receives all nodes
     # as a subsample, i.e. measures the batch size as equal to the total number of nodes, so we need to set the
     # dataset size accordingly to achieve the correct scaling of the log likelihood
-    obs = tyxe.observation_models.Categorical(dataset_size=total_nodes)
+    obs = tyxe.likelihoods.Categorical(dataset_size=total_nodes)
     bnn = tyxe.VariationalBNN(net, prior, obs, guide)
 
     optim = torch.optim.Adam
