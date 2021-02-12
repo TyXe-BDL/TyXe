@@ -257,7 +257,7 @@ class MCMC_BNN(_BNN):
         :param int num_samples: number of MCMC samples to draw.
         :param torch.device device: optional device to send the data to.
         :param batch_data: whether to treat data_loader as a full batch of data or an iterable over mini-batches.
-        :param dict mcmc_args: keyword arguments for initializing the pyro.infer.mcmc.MCMC object."""
+        :param dict mcmc_kwargs: keyword arguments for initializing the pyro.infer.mcmc.MCMC object."""
         if batch_data:
             input_data, observation_data = data_loader
         else:

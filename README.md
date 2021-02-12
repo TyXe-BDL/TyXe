@@ -104,6 +104,6 @@ We recommend installing TyXe using conda with the provided `environment.yml`, wh
 The environment assumes that you are using CUDA11.0, if this is not the case, simply change the `cudatoolkit` and `dgl-cuda` versions before running:
 ```
 conda env create -f environment.yml
-conda activate tyxeicml2021
+conda activate tyxe
 pip install -e .
 ```
