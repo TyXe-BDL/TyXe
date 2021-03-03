@@ -5,7 +5,7 @@ from pyro.poutine.block_messenger import _make_default_hide_fn
 
 __all__ = [
     "SelectiveMaskMessenger",
-    "ScaleMessenger"
+    "SelectiveScaleMessenger"
 ]
 
 
