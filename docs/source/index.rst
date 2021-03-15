@@ -5,7 +5,7 @@ TyXe Documentation
 ==================
 
 
-Test writing plain text
+TyXe website and docs. Under construction!
 
 .. toctree::
     :maxdepth: 2
