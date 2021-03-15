@@ -1,4 +1,4 @@
-:github_url: https://github.com/karalets/TyXe
+:github_url: https://github.com/TyXe-BDL/TyXe
 
 
 TyXe Documentation
