@@ -112,13 +112,9 @@ pip install -e .
 If you use TyXe, please consider citing:
 ```
 @article{ritter2021tyxe,
-  author    = {Hippolyt Ritter and
-               Theofanis Karaletsos
-               },
-  title     = {TyXe: Pyro-based Bayesian neural nets for Pytorch},
-  journal   = {International Conference on Probabilistic Programming (ProbProg)},
-  volume    = {},
-  pages     = {},
-  year      = {2020},
-  url       = {https://arxiv.org/abs/2110.00276}
+  title={Ty{X}e: Pyro-based {B}ayesian neural nets for {P}ytorch},
+  author={Ritter, Hippolyt and Karaletsos, Theofanis},
+  journal={arXiv preprint arXiv:2110.00276},
+  year={2021}
 }
+```
