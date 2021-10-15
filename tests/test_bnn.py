@@ -19,7 +19,7 @@ def bayesian_regression(n, d, weight_precision, noise_precision):
     y = x @ w + noise_precision ** -0.5 * torch.randn(n, 1)
 
     posterior_precision = noise_precision * x.t().mm(x) + weight_precision * torch.eye(d)
-    posterior_mean = torch.cholesky_solve(noise_precision * x.t().mm(y), torch.linalg.cholesky(posterior_precision))
+    posterior_mean = torch.cholesky_solve(noise_precision * x.t().mm(y), torch.cholesky(posterior_precision))
 
     return x, y, w, posterior_precision, posterior_mean
 
@@ -81,7 +81,7 @@ def test_hmc():
                          variational=False)
 
     loader = data.DataLoader(data.TensorDataset(x, y), n // 2, shuffle=True)
-    w_mcmc = bnn.fit(loader, num_samples=4000, warmup_steps=1000, disable_progbar=True).get_samples()["net.weight"]
+    w_mcmc = bnn.fit(loader, num_samples=4000, warmup_steps=1000, disable_progbar=True).get_samples()["weight"]
 
     w_mean = w_mcmc.mean(0)
     w_cov = w_mcmc.transpose(-2, -1).mul(w_mcmc).mean(0) - w_mean.t().mm(w_mean)

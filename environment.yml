@@ -1,4 +1,4 @@
-name: tyxe
+name: tyxe-test
 channels:
   - pytorch
   - dglteam
@@ -17,4 +17,4 @@ dependencies:
   - requests=2.25.1
   - pip
   - pip:
-    - pyro-ppl
+    - pyro-ppl==1.4.0
