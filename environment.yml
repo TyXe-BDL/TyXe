@@ -1,4 +1,4 @@
-name: tyxe-test
+name: tyxe
 channels:
   - pytorch
   - dglteam
