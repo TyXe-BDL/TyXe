@@ -4,3 +4,4 @@ __pycache__/
 .idea/
 *.egg-info/
 docs/build/
+env/
