@@ -9,18 +9,11 @@ import pyro.util
 import pyro.infer.autoguide.guides
 import pyro.nn.module as pyromodule
 
-
-def deep_hasattr(obj, name):
-    try:
-        pyro.util.deep_getattr(obj, name)
-        return True
-    except AttributeError:
-        return False
-
-
-deep_setattr = pyro.infer.autoguide.guides._deep_setattr
-deep_getattr = pyro.util.deep_getattr
-
+try:
+    deep_setattr = pyro.infer.autoguide.guides.deep_setattr
+except AttributeError:
+    # Needed for older versions of pyro can be dropped if 1.7.0 is oldset supported
+    deep_setattr = pyro.infer.autoguide.guides._deep_setattr
 
 def to_pyro_module_(m, name="", recurse=True):
     """

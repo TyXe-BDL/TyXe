@@ -11,6 +11,6 @@ setup(
     install_requires=[
         'torch >= 1.7.0',
         'torchvision >= 0.8.1',
-        'pyro-ppl == 1.4.0'
+        'pyro-ppl >= 1.4.0'
     ],
 )

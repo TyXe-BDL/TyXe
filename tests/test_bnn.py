@@ -1,4 +1,5 @@
 from functools import partial
+from packaging import version
 
 import torch
 import torch.nn as nn
@@ -19,7 +20,7 @@ def bayesian_regression(n, d, weight_precision, noise_precision):
     y = x @ w + noise_precision ** -0.5 * torch.randn(n, 1)
 
     posterior_precision = noise_precision * x.t().mm(x) + weight_precision * torch.eye(d)
-    posterior_mean = torch.cholesky_solve(noise_precision * x.t().mm(y), torch.cholesky(posterior_precision))
+    posterior_mean = torch.cholesky_solve(noise_precision * x.t().mm(y), torch.linalg.cholesky(posterior_precision))
 
     return x, y, w, posterior_precision, posterior_mean
 
@@ -32,7 +33,6 @@ def get_linear_bnn(n, d, wp, np, guide, variational=True):
         return tyxe.VariationalBNN(l, prior, likelihood, guide)
     else:
         return tyxe.MCMC_BNN(l, prior, likelihood, guide)
-
 
 def test_diagonal_svi():
     torch.manual_seed(42)
@@ -66,10 +66,12 @@ def test_multivariate_svi():
     bnn.fit(loader, sched, 2500, num_particles=4, callback=lambda *args: sched.step())
 
     vm = pyro.get_param_store()["net_guide.loc"].data.squeeze()
-    vs = pyro.get_param_store()["net_guide.scale_tril"].data
+    vs = pyro.get_param_store()["net_guide.scale_tril"].data # This value has changed!!
 
     assert torch.allclose(vm, pm.squeeze(), atol=0.01)
+
     cov_prec_mm = vs.mm(vs.t()).mm(pp)
+
     assert torch.allclose(cov_prec_mm, torch.eye(d), atol=0.05)
 
 
@@ -81,7 +83,12 @@ def test_hmc():
                          variational=False)
 
     loader = data.DataLoader(data.TensorDataset(x, y), n // 2, shuffle=True)
-    w_mcmc = bnn.fit(loader, num_samples=4000, warmup_steps=1000, disable_progbar=True).get_samples()["weight"]
+    mcmc = bnn.fit(loader, num_samples=4000, warmup_steps=1000, disable_progbar=True).get_samples()
+    if version.parse(pyro.__version__) <  version.parse("1.7.0"):
+        w_mcmc = mcmc["weight"]
+    else:
+        w_mcmc = mcmc["net.weight"]
+
 
     w_mean = w_mcmc.mean(0)
     w_cov = w_mcmc.transpose(-2, -1).mul(w_mcmc).mean(0) - w_mean.t().mm(w_mean)
