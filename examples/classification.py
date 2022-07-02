@@ -55,7 +55,7 @@ loader = data.DataLoader(dataset, batch_size=int(len(x)/5))
 
 net = nn.Sequential(nn.Linear(2, 5), nn.ReLU(inplace=True), nn.Linear(5, 1), nn.Sigmoid())
 prior = tyxe.priors.IIDPrior(dist.Normal(0, 1))
-obs_model = tyxe.likelihoods.Bernoulli(int(len(x)/5), logit_predictions=False)
+obs_model = tyxe.likelihoods.Bernoulli(int(len(x)/5), logit_predictions=False, event_dim=1)
 guide = partial(tyxe.guides.AutoNormal, init_scale=0.01)
 bnn = tyxe.VariationalBNN(net, prior, obs_model, guide)
 
