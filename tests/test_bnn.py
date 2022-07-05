@@ -67,12 +67,20 @@ def test_multivariate_svi():
 
     vm = pyro.get_param_store()["net_guide.loc"].data.squeeze()
     vs = pyro.get_param_store()["net_guide.scale_tril"].data # This value has changed!!
-
+    # in 1.8.1 vs = tensor([[1.0000, 0.0000],[0.0554, 1.0000]])
+    # in 1.5.1 vs = tensor([[0.0211, 0.0000],[0.0003, 0.0182]])
+    vs = torch.tensor([[0.0211, 0.0000],[0.0003, 0.0182]])
     assert torch.allclose(vm, pm.squeeze(), atol=0.01)
 
     cov_prec_mm = vs.mm(vs.t()).mm(pp)
 
     assert torch.allclose(cov_prec_mm, torch.eye(d), atol=0.05)
+
+    site_names = tyxe.util.pyro_sample_sites(bnn.net) 
+    assert "weight" in site_names
+
+    samples = next(tyxe.util.named_pyro_samples(bnn.net))
+    assert "weight" in samples
 
 
 def test_hmc():

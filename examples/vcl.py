@@ -110,20 +110,24 @@ def make_cifar_dataloaders(root, train_batch_size, test_batch_size):
     return train_loaders, test_loaders
 
 
-def main(root, dataset, inference):
+def main(root, dataset, inference, test=False):
     train_batch_size = 250
     test_batch_size = 1000
+    if test:
+        factor = 1
+    else: 
+        factor = 10
 
     if dataset == "cifar":
         net = ConvNet()
         obs = tyxe.likelihoods.Categorical(-1)
         train_loaders, test_loaders = make_cifar_dataloaders(root, train_batch_size, test_batch_size)
-        num_epochs = 60
+        num_epochs *= 6*factor 
     elif dataset == "mnist":
         net = FCNet()
         obs = tyxe.likelihoods.Bernoulli(-1, event_dim=1)
         train_loaders, test_loaders = make_mnist_dataloaders(root, train_batch_size, test_batch_size)
-        num_epochs = 600
+        num_epochs = 60*factor
     else:
         raise RuntimeError("Unreachable")
 
@@ -173,8 +177,10 @@ def main(root, dataset, inference):
         print("\t" + "\t".join([f"{100 * e:.2f}%" for e in test_errors[i-1, :i]]))
 
         if inference == "mean-field":
-            bnn.update_prior(tyxe.priors.DictPrior(bnn.net_guide.get_detached_distributions(
-                tyxe.util.pyro_sample_sites(bnn.net))))
+            # breakpoint()
+            # site_names = tyxe.util.pyro_sample_sites(bnn.net) # This yields an empty generator now
+            site_names = None
+            bnn.update_prior(tyxe.priors.DictPrior(bnn.net_guide.get_detached_distributions(site_names)))
 
 
 if __name__ == '__main__':
@@ -182,5 +188,6 @@ if __name__ == '__main__':
     parser.add_argument("--root", default=ROOT)
     parser.add_argument("--dataset", choices=["mnist", "cifar"], required=True)
     parser.add_argument("--inference", choices=["mean-field", "ml"], required=True)
+    parser.add_argument("--test", action='store_true')
 
     main(**vars(parser.parse_args()))

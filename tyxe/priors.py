@@ -189,8 +189,11 @@ class DictPrior(Prior):
         self.prior_dict = prior_dict
 
     def prior_dist(self, name, module, param):
+        # This makes vcl and tests pass
+        # try:
+        #     return self.prior_dict['net.'+name]
+        # except KeyError:
         return self.prior_dict[name]
-
 
 class LambdaPrior(Prior):
     """Utility class to avoid implementing a prior class for a given function."""
