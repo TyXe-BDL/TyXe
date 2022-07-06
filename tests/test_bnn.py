@@ -56,9 +56,8 @@ def test_diagonal_svi():
 def test_multivariate_svi():
     torch.manual_seed(42)
     n, d, wp, np = 20, 2, 1, 100
-    x, y, w, pp, pm = bayesian_regression(n, d, wp, np)
+    x, y, w, pp, pm = bayesian_regression(n, d, wp, np) # These are unchanged by the upgrade
     bnn = get_linear_bnn(n, d, wp, np, partial(ag.AutoMultivariateNormal, init_scale=1e-2))
-
     loader = data.DataLoader(data.TensorDataset(x, y), n // 2, shuffle=True)
 
     optim = torch.optim.Adam
@@ -66,10 +65,18 @@ def test_multivariate_svi():
     bnn.fit(loader, sched, 2500, num_particles=4, callback=lambda *args: sched.step())
 
     vm = pyro.get_param_store()["net_guide.loc"].data.squeeze()
-    vs = pyro.get_param_store()["net_guide.scale_tril"].data # This value has changed!!
-    # in 1.8.1 vs = tensor([[1.0000, 0.0000],[0.0554, 1.0000]])
-    # in 1.5.1 vs = tensor([[0.0211, 0.0000],[0.0003, 0.0182]])
-    vs = torch.tensor([[0.0211, 0.0000],[0.0003, 0.0182]])
+    vsd = pyro.get_param_store()["net_guide.scale"].data # This value has changed!!
+    vst = pyro.get_param_store()["net_guide.scale_tril"].data # This value has changed!!
+
+    vs =  vst*vsd # this fixes it.
+
+    
+    # in 1.8.1 vst = tensor([[1.0000, 0.0000],[0.0554, 1.0000]])
+
+    # in 1.5.1 vst = tensor([[0.0211, 0.0000],[0.0003, 0.0182]])
+    
+    # vs = torch.tensor([[0.0211, 0.0000],[0.0003, 0.0182]])
+
     assert torch.allclose(vm, pm.squeeze(), atol=0.01)
 
     cov_prec_mm = vs.mm(vs.t()).mm(pp)
