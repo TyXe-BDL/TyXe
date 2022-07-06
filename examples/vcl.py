@@ -122,7 +122,7 @@ def main(root, dataset, inference, test=False):
         net = ConvNet()
         obs = tyxe.likelihoods.Categorical(-1)
         train_loaders, test_loaders = make_cifar_dataloaders(root, train_batch_size, test_batch_size)
-        num_epochs *= 6*factor 
+        num_epochs = 6*factor 
     elif dataset == "mnist":
         net = FCNet()
         obs = tyxe.likelihoods.Bernoulli(-1, event_dim=1)
