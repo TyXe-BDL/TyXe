@@ -86,8 +86,14 @@ def make_cifar_dataloaders(root, train_batch_size, test_batch_size):
     c100_means = []
     c100_sds = []
     for train, loaders, bs in zip((True, False), (train_loaders, test_loaders), (train_batch_size, test_batch_size)):
-        c10 = CIFAR10(os.path.join(root, "cifar10"), train=train,
-                      transform=tf.Compose([tf.ToTensor(), tf.Normalize(C10_MEAN, C10_SD)]))
+        c10 = CIFAR10(
+                os.path.join(root, "cifar10"),
+                train=train,
+                transform=tf.Compose([tf.ToTensor(),
+                tf.Normalize(C10_MEAN, C10_SD)])
+            )
+
+            
         loaders.append(data.DataLoader(c10, bs, shuffle=train, pin_memory=USE_CUDA))
 
         c100 = CIFAR100(os.path.join(root, "cifar100"), train=train)
@@ -135,8 +141,11 @@ def main(root, dataset, inference, test=False):
     if inference == "mean-field":
         prior = tyxe.priors.IIDPrior(dist.Normal(torch.tensor(0., device=DEVICE), torch.tensor(1., device=DEVICE)),
                                      expose_all=False, hide_modules=[net.Head])
-        guide = functools.partial(tyxe.guides.AutoNormal, init_scale=1e-4,
-                                  init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(net))
+        guide = functools.partial(
+            tyxe.guides.AutoNormal,  
+            init_scale=1e-4,  
+            init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(net, prefix="net")
+        )
         test_samples = 8
     elif inference == "ml":
         prior = tyxe.priors.IIDPrior(dist.Normal(0, 1), expose_all=False, hide_all=True)
@@ -144,7 +153,6 @@ def main(root, dataset, inference, test=False):
     else:
         raise RuntimeError("Unreachable")
     bnn = tyxe.VariationalBNN(net, prior, obs, guide)
-
     n_tasks = len(train_loaders)
     test_errors = torch.ones(n_tasks, n_tasks)
 
@@ -177,9 +185,7 @@ def main(root, dataset, inference, test=False):
         print("\t" + "\t".join([f"{100 * e:.2f}%" for e in test_errors[i-1, :i]]))
 
         if inference == "mean-field":
-            # breakpoint()
-            # site_names = tyxe.util.pyro_sample_sites(bnn.net) # This yields an empty generator now
-            site_names = None
+            site_names = tyxe.util.pyro_sample_sites(bnn)
             bnn.update_prior(tyxe.priors.DictPrior(bnn.net_guide.get_detached_distributions(site_names)))
 
 

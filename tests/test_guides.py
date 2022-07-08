@@ -142,6 +142,6 @@ def test_pretrained_from_net_init():
     l = torch.nn.Linear(3, 2, bias=False)
     model = PyroModule[torch.nn.Linear](3, 2, bias=False)
     model.weight = PyroSample(dist.Normal(torch.zeros_like(model.weight), torch.ones_like(model.weight)))
-    guide = tyxe.guides.AutoNormal(model, init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(l, name_prefix=""))
+    guide = tyxe.guides.AutoNormal(model, init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(l, prefix=""))
     guide(torch.randn(3))
     assert guide.weight.loc.eq(l.weight).all().item()
