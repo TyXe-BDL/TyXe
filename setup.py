@@ -1,5 +1,8 @@
 from setuptools import setup, find_packages
 
+with open("requirements.txt","r") as f:
+    reqs = f.readlines()
+
 setup(
     name='tyxe',
     version='0.0.1',
@@ -8,9 +11,5 @@ setup(
     author_email='j.ritter@cs.ucl.ac.uk',
     description='BNNs for pytorch using pyro.',
     packages=find_packages(),
-    install_requires=[
-        'torch >= 1.7.0',
-        'torchvision >= 0.8.1',
-        'pyro-ppl == 1.4.0'
-    ],
+    install_requires=reqs,
 )
