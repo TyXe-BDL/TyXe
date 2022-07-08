@@ -6,7 +6,7 @@ python classification.py
 
 python regression.py
 
-python vcl.py --dataset mnist --inference ml --test # can't download and run cifar succesfully
+python vcl.py --dataset mnist --inference ml --test
 python vcl.py --dataset mnist --inference mean-field --test
 
 python gnn.py --num-epochs 100
@@ -14,6 +14,8 @@ python resnet.py --inference ml --num-epochs 10
 python resnet.py --inference mean-field --num-epochs 10
 python resnet.py --inference map --num-epochs 10
 
+
+echo Done with examples, all ran
 # Adding a test for one of the last-laye rones would be nice, but not sure how to handle the shipping of pre-trained weights
 # python resnet.py --inference last-layer-mean-field --num-epochs 10
 
