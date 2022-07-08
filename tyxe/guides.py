@@ -72,22 +72,20 @@ class PretrainedInitializer:
         self.values = values
 
     def __call__(self, site):
-        # return self.values[site["name"].split('.',1)[1]] # this breaks the tests, but negates the need for name_prefix below
         return self.values[site["name"]]
 
     @classmethod
-    def from_net(cls, net, prefix="", name_prefix="net."):
+    def from_net(cls, net, prefix="net"):
         """Alternative init method for instantiating the class from the parameter values of an nn.Module.
         
         :param module: nn.Module to extract parameters from
         :param string prefix: Prefix value to pass to the modules `named_parameters` function
-        :param string name_prefix: Prefix to the returned dictionary keys, used to align naming with pyro, defaults to "net."
         
         :rtype: PretrainedInitializer
         """
         values = {}
         for name, parameter in net.named_parameters(prefix):
-            values[name_prefix+name] = parameter.data.clone()
+            values[name] = parameter.data.clone()
         return cls(values)
 
 

@@ -139,6 +139,9 @@ class Prior(metaclass=ABCMeta):
         for module_name, module in net.named_modules():
             for site_name, site in list(util.named_pyro_samples(module, recurse=False)):
                 full_name = module_name + "." + site_name
+                # See change in DictPrior as an alternative
+                # if type(self)== DictPrior: 
+                #     full_name = 'net.' + full_name
                 if self.expose_fn(module, full_name):
                     prior_dist = self.prior_dist(full_name, module, site)
                     setattr(module, site_name, PyroSample(prior_dist))
@@ -189,11 +192,12 @@ class DictPrior(Prior):
         self.prior_dict = prior_dict
 
     def prior_dist(self, name, module, param):
-        # This makes vcl and tests pass
-        # try:
-        #     return self.prior_dict['net.'+name]
-        # except KeyError:
-        return self.prior_dict[name]
+        # I find this preferable to the hack in update_ as it gets to the root. 
+        # I haven't understood where the net prefix comes from, but that would probably be the best place to address this.
+        try:
+            return self.prior_dict['net.'+name]
+        except KeyError:
+            return self.prior_dict[name]
 
 class LambdaPrior(Prior):
     """Utility class to avoid implementing a prior class for a given function."""
