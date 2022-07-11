@@ -1,5 +1,4 @@
 from functools import partial
-from packaging import version
 
 import torch
 import torch.nn as nn
@@ -99,10 +98,7 @@ def test_hmc():
 
     loader = data.DataLoader(data.TensorDataset(x, y), n // 2, shuffle=True)
     mcmc = bnn.fit(loader, num_samples=4000, warmup_steps=1000, disable_progbar=True).get_samples()
-    if version.parse(pyro.__version__) <  version.parse("1.7.0"):
-        w_mcmc = mcmc["weight"]
-    else:
-        w_mcmc = mcmc["net.weight"]
+    w_mcmc = mcmc["net.weight"]
 
 
     w_mean = w_mcmc.mean(0)
