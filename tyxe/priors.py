@@ -187,17 +187,17 @@ class DictPrior(Prior):
     """Dictionary of prior distributions mapping parameter names as in module.named_parameters() to distribution
     objects."""
 
-    def __init__(self, prior_dict, *args, **kwargs):
+    def __init__(self, prior_dict, prefix='',  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.prior_dict = prior_dict
+        self.prefix = prefix
 
     def prior_dist(self, name, module, param):
-        # I find this preferable to the hack in update_ as it gets to the root. 
-        # I haven't understood where the net prefix comes from, but that would probably be the best place to address this.
         try:
-            return self.prior_dict['net.'+name]
-        except KeyError:
-            return self.prior_dict[name]
+            return self.prior_dict[self.prefix +name]
+        except KeyError as e:
+            print(f"Found these keys: {self.prior_dict.keys()}, but not {name} perhaps add a prefix?")
+            raise e
 
 class LambdaPrior(Prior):
     """Utility class to avoid implementing a prior class for a given function."""
