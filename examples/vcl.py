@@ -116,7 +116,7 @@ def make_cifar_dataloaders(root, train_batch_size, test_batch_size):
     return train_loaders, test_loaders
 
 
-def main(root, dataset, inference, test=False):
+def main(root, dataset, inference, num_epochs=0):
     train_batch_size = 250
     test_batch_size = 1000
 
@@ -190,6 +190,5 @@ if __name__ == '__main__':
     parser.add_argument("--root", default=ROOT)
     parser.add_argument("--dataset", choices=["mnist", "cifar"], required=True)
     parser.add_argument("--inference", choices=["mean-field", "ml"], required=True)
-    parser.add_argument("--num-epochs", default=0)
-
+    parser.add_argument("--num-epochs", default=0, required=False)
     main(**vars(parser.parse_args()))
