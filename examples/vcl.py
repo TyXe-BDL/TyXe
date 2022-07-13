@@ -119,21 +119,17 @@ def make_cifar_dataloaders(root, train_batch_size, test_batch_size):
 def main(root, dataset, inference, test=False):
     train_batch_size = 250
     test_batch_size = 1000
-    if test:
-        factor = 1
-    else: 
-        factor = 10
 
     if dataset == "cifar":
         net = ConvNet()
         obs = tyxe.likelihoods.Categorical(-1)
         train_loaders, test_loaders = make_cifar_dataloaders(root, train_batch_size, test_batch_size)
-        num_epochs = 6*factor 
+        num_epochs = 60 if not num_epochs else num_epochs
     elif dataset == "mnist":
         net = FCNet()
         obs = tyxe.likelihoods.Bernoulli(-1, event_dim=1)
         train_loaders, test_loaders = make_mnist_dataloaders(root, train_batch_size, test_batch_size)
-        num_epochs = 60*factor
+        num_epochs = 600 if not num_epochs else num_epochs
     else:
         raise RuntimeError("Unreachable")
 
@@ -194,6 +190,6 @@ if __name__ == '__main__':
     parser.add_argument("--root", default=ROOT)
     parser.add_argument("--dataset", choices=["mnist", "cifar"], required=True)
     parser.add_argument("--inference", choices=["mean-field", "ml"], required=True)
-    parser.add_argument("--test", action='store_true')
+    parser.add_argument("--num-epochs", default=0)
 
     main(**vars(parser.parse_args()))
