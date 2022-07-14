@@ -120,7 +120,7 @@ class AutoNormal(ag.AutoGuide):
             unconstrained_value = biject_to(site["fn"].support).inv(constrained_value)
             if self.train_loc:
                 unconstrained_value = pynn.PyroParam(unconstrained_value)
-            util.deep_setattr(self, name + ".loc", unconstrained_value)
+            ag.guides.deep_setattr(self, name + ".loc", unconstrained_value)
             if isinstance(self.init_scale, numbers.Real):
                 scale_value = torch.full_like(site["value"], self.init_scale)
             elif isinstance(self.init_scale, str):
@@ -129,7 +129,7 @@ class AutoNormal(ag.AutoGuide):
                 scale_value = self.init_scale[site["name"]]
             scale_constraint = constraints.positive if self.max_guide_scale is None else constraints.interval(0., self.max_guide_scale)
             scale = pynn.PyroParam(scale_value, constraint=scale_constraint) if self.train_scale else scale_value   
-            util.deep_setattr(self, name + ".scale", scale)
+            ag.guides.deep_setattr(self, name + ".scale", scale)
             
     def get_loc(self, site_name):
         return pyro.util.deep_getattr(self, site_name + ".loc")
