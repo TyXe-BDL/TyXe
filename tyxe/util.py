@@ -23,7 +23,7 @@ def deep_setattr(obj, key, val):
     warn('deep_setattr is deprecated.', DeprecationWarning, stacklevel=2)
     return pyro.infer.autoguide.guides.deep_setattr(obj, key, val)
 
-def deep_setattr(obj, name):
+def deep_getattr(obj, name):
     warn('deep_getattr is deprecated.', DeprecationWarning, stacklevel=2)
     return pyro.util.deep_getattr(obj, name)
 
