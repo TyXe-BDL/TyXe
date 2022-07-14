@@ -2,12 +2,31 @@ from collections import OrderedDict
 import copy
 from functools import reduce
 from operator import mul, itemgetter
+from warnings import warn
 
 import torch
 
 import pyro.util
 import pyro.infer.autoguide.guides
 import pyro.nn.module as pyromodule
+
+def deep_hasattr(obj, name):
+    warn('deep_hasattr is deprecated.', DeprecationWarning, stacklevel=2)
+    try:
+        pyro.util.deep_getattr(obj, name)
+        return True
+    except AttributeError:
+        return False
+
+
+def deep_setattr(*args, **kwargs):
+    warn('deep_setattr is deprecated.', DeprecationWarning, stacklevel=2)
+    return pyro.infer.autoguide.guides.deep_setattr(*args, **kwargs)
+
+def deep_setattr(*args, **kwargs):
+    warn('deep_getattr is deprecated.', DeprecationWarning, stacklevel=2)
+    return pyro.util.deep_getattr(*args, **kwargs)
+
 
 def to_pyro_module_(m, name="", recurse=True):
     """
