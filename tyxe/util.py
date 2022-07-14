@@ -9,8 +9,6 @@ import pyro.util
 import pyro.infer.autoguide.guides
 import pyro.nn.module as pyromodule
 
-deep_setattr = pyro.infer.autoguide.guides.deep_setattr
-
 def to_pyro_module_(m, name="", recurse=True):
     """
     Same as `pyro.nn.modules.to_pyro_module_` except that it also accepts a name argument and returns the modified
