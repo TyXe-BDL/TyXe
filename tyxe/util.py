@@ -19,13 +19,13 @@ def deep_hasattr(obj, name):
         return False
 
 
-def deep_setattr(*args, **kwargs):
+def deep_setattr(obj, key, val):
     warn('deep_setattr is deprecated.', DeprecationWarning, stacklevel=2)
-    return pyro.infer.autoguide.guides.deep_setattr(*args, **kwargs)
+    return pyro.infer.autoguide.guides.deep_setattr(obj, key, val)
 
-def deep_setattr(*args, **kwargs):
+def deep_setattr(obj, name):
     warn('deep_getattr is deprecated.', DeprecationWarning, stacklevel=2)
-    return pyro.util.deep_getattr(*args, **kwargs)
+    return pyro.util.deep_getattr(obj, name)
 
 
 def to_pyro_module_(m, name="", recurse=True):
