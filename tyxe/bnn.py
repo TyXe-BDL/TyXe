@@ -7,7 +7,6 @@ import torch
 import pyro.nn as pynn
 import pyro.poutine as poutine
 from pyro.infer import SVI, Trace_ELBO, TraceMeanField_ELBO, MCMC
-from tqdm.autonotebook import trange
 
 from . import util
 
@@ -200,7 +199,7 @@ class VariationalBNN(_SupervisedBNN):
         loss = TraceMeanField_ELBO(num_particles) if closed_form_kl else Trace_ELBO(num_particles)
         svi = SVI(self.model, self.guide, optim, loss=loss)
 
-        for i in trange(num_epochs):
+        for i in range(num_epochs):
             elbo = 0.
             num_batch = 1
             for num_batch, (input_data, observation_data) in enumerate(iter(data_loader), 1):
