@@ -64,17 +64,10 @@ def test_multivariate_svi():
     bnn.fit(loader, sched, 2500, num_particles=4, callback=lambda *args: sched.step())
 
     vm = pyro.get_param_store()["net_guide.loc"].data.squeeze()
-    vsd = pyro.get_param_store()["net_guide.scale"].data # This value has changed!!
-    vst = pyro.get_param_store()["net_guide.scale_tril"].data # This value has changed!!
+    vsd = pyro.get_param_store()["net_guide.scale"].data
+    vst = pyro.get_param_store()["net_guide.scale_tril"].data
 
-    vs =  vst*vsd # this fixes it.
-
-    
-    # in 1.8.1 vst = tensor([[1.0000, 0.0000],[0.0554, 1.0000]])
-
-    # in 1.5.1 vst = tensor([[0.0211, 0.0000],[0.0003, 0.0182]])
-    
-    # vs = torch.tensor([[0.0211, 0.0000],[0.0003, 0.0182]])
+    vs =  vst*vsd 
 
     assert torch.allclose(vm, pm.squeeze(), atol=0.01)
 
