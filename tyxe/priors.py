@@ -194,7 +194,7 @@ class DictPrior(Prior):
 
     def prior_dist(self, name, module, param):
         try:
-            return self.prior_dict[self.prefix +name]
+            return self.prior_dict[self.prefix+ ('.' if self.prefix else '') +name]
         except KeyError as e:
             print(f"Found these keys: {self.prior_dict.keys()}, but not {name} perhaps add a prefix?")
             raise e
