@@ -139,6 +139,9 @@ class Prior(metaclass=ABCMeta):
         for module_name, module in net.named_modules():
             for site_name, site in list(util.named_pyro_samples(module, recurse=False)):
                 full_name = module_name + "." + site_name
+                # See change in DictPrior as an alternative
+                # if type(self)== DictPrior: 
+                #     full_name = 'net.' + full_name
                 if self.expose_fn(module, full_name):
                     prior_dist = self.prior_dist(full_name, module, site)
                     setattr(module, site_name, PyroSample(prior_dist))
@@ -184,13 +187,17 @@ class DictPrior(Prior):
     """Dictionary of prior distributions mapping parameter names as in module.named_parameters() to distribution
     objects."""
 
-    def __init__(self, prior_dict, *args, **kwargs):
+    def __init__(self, prior_dict, prefix='',  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.prior_dict = prior_dict
+        self.prefix = prefix
 
     def prior_dist(self, name, module, param):
-        return self.prior_dict[name]
-
+        try:
+            return self.prior_dict[self.prefix+ ('.' if self.prefix else '') +name]
+        except KeyError as e:
+            print(f"Found these keys: {self.prior_dict.keys()}, but not {name} perhaps add a prefix?")
+            raise e
 
 class LambdaPrior(Prior):
     """Utility class to avoid implementing a prior class for a given function."""

@@ -86,8 +86,14 @@ def make_cifar_dataloaders(root, train_batch_size, test_batch_size):
     c100_means = []
     c100_sds = []
     for train, loaders, bs in zip((True, False), (train_loaders, test_loaders), (train_batch_size, test_batch_size)):
-        c10 = CIFAR10(os.path.join(root, "cifar10"), train=train,
-                      transform=tf.Compose([tf.ToTensor(), tf.Normalize(C10_MEAN, C10_SD)]))
+        c10 = CIFAR10(
+                os.path.join(root, "cifar10"),
+                train=train,
+                transform=tf.Compose([tf.ToTensor(),
+                tf.Normalize(C10_MEAN, C10_SD)])
+            )
+
+            
         loaders.append(data.DataLoader(c10, bs, shuffle=train, pin_memory=USE_CUDA))
 
         c100 = CIFAR100(os.path.join(root, "cifar100"), train=train)
@@ -110,7 +116,7 @@ def make_cifar_dataloaders(root, train_batch_size, test_batch_size):
     return train_loaders, test_loaders
 
 
-def main(root, dataset, inference):
+def main(root, dataset, inference, num_epochs=0):
     train_batch_size = 250
     test_batch_size = 1000
 
@@ -118,12 +124,12 @@ def main(root, dataset, inference):
         net = ConvNet()
         obs = tyxe.likelihoods.Categorical(-1)
         train_loaders, test_loaders = make_cifar_dataloaders(root, train_batch_size, test_batch_size)
-        num_epochs = 60
+        num_epochs = 60 if not num_epochs else num_epochs
     elif dataset == "mnist":
         net = FCNet()
         obs = tyxe.likelihoods.Bernoulli(-1, event_dim=1)
         train_loaders, test_loaders = make_mnist_dataloaders(root, train_batch_size, test_batch_size)
-        num_epochs = 600
+        num_epochs = 600 if not num_epochs else num_epochs
     else:
         raise RuntimeError("Unreachable")
 
@@ -131,8 +137,11 @@ def main(root, dataset, inference):
     if inference == "mean-field":
         prior = tyxe.priors.IIDPrior(dist.Normal(torch.tensor(0., device=DEVICE), torch.tensor(1., device=DEVICE)),
                                      expose_all=False, hide_modules=[net.Head])
-        guide = functools.partial(tyxe.guides.AutoNormal, init_scale=1e-4,
-                                  init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(net))
+        guide = functools.partial(
+            tyxe.guides.AutoNormal,  
+            init_scale=1e-4,  
+            init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(net, prefix="net")
+        )
         test_samples = 8
     elif inference == "ml":
         prior = tyxe.priors.IIDPrior(dist.Normal(0, 1), expose_all=False, hide_all=True)
@@ -140,7 +149,6 @@ def main(root, dataset, inference):
     else:
         raise RuntimeError("Unreachable")
     bnn = tyxe.VariationalBNN(net, prior, obs, guide)
-
     n_tasks = len(train_loaders)
     test_errors = torch.ones(n_tasks, n_tasks)
 
@@ -173,8 +181,8 @@ def main(root, dataset, inference):
         print("\t" + "\t".join([f"{100 * e:.2f}%" for e in test_errors[i-1, :i]]))
 
         if inference == "mean-field":
-            bnn.update_prior(tyxe.priors.DictPrior(bnn.net_guide.get_detached_distributions(
-                tyxe.util.pyro_sample_sites(bnn.net))))
+            site_names = tyxe.util.pyro_sample_sites(bnn)
+            bnn.update_prior(tyxe.priors.DictPrior(bnn.net_guide.get_detached_distributions(site_names), prefix='net'))
 
 
 if __name__ == '__main__':
@@ -182,5 +190,5 @@ if __name__ == '__main__':
     parser.add_argument("--root", default=ROOT)
     parser.add_argument("--dataset", choices=["mnist", "cifar"], required=True)
     parser.add_argument("--inference", choices=["mean-field", "ml"], required=True)
-
+    parser.add_argument("--num-epochs", default=0, required=False, type=int)
     main(**vars(parser.parse_args()))

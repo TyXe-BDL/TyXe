@@ -79,10 +79,10 @@ def main(dataset, architecture, inference, train_batch_size, test_batch_size, lo
         prior_kwargs["hide_all"] = True
     elif inference == "map":
         test_samples = 1
-        guide = functools.partial(ag.AutoDelta, init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(net))
+        guide = functools.partial(ag.AutoDelta, init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(net, prefix="net"))
     elif inference == "mean-field":
         guide = functools.partial(tyxe.guides.AutoNormal,
-                                  init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(net), init_scale=1e-4,
+                                  init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(net, prefix="net"), init_scale=1e-4,
                                   max_guide_scale=max_guide_scale, train_loc=not scale_only)
     elif inference.startswith("last-layer"):
         if pretrained_weights is None:
@@ -98,13 +98,13 @@ def main(dataset, architecture, inference, train_batch_size, test_batch_size, lo
         prior_kwargs["expose_modules"] = [net.fc]
         if inference == "last-layer-mean-field":
             guide = functools.partial(tyxe.guides.AutoNormal,
-                                      init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(net), init_scale=1e-4)
+                                      init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(net, prefix="net"), init_scale=1e-4)
         elif inference == "last-layer-full":
             guide = functools.partial(ag.AutoMultivariateNormal,
-                                      init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(net), init_scale=1e-4)
+                                      init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(net, prefix="net"), init_scale=1e-4)
         elif inference == "last-layer-low-rank":
             guide = functools.partial(ag.AutoLowRankMultivariateNormal, rank=rank,
-                                      init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(net), init_scale=1e-4)
+                                      init_loc_fn=tyxe.guides.PretrainedInitializer.from_net(net, prefix="net"), init_scale=1e-4)
         else:
             raise RuntimeError("Unreachable")
     else:

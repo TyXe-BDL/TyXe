@@ -8,7 +8,6 @@ import pyro.nn as pynn
 import pyro.poutine as poutine
 from pyro.infer import SVI, Trace_ELBO, TraceMeanField_ELBO, MCMC
 
-
 from . import util
 
 

@@ -2,6 +2,7 @@ from collections import OrderedDict
 import copy
 from functools import reduce
 from operator import mul, itemgetter
+from warnings import warn
 
 import torch
 
@@ -9,8 +10,8 @@ import pyro.util
 import pyro.infer.autoguide.guides
 import pyro.nn.module as pyromodule
 
-
 def deep_hasattr(obj, name):
+    warn('deep_hasattr is deprecated.', DeprecationWarning, stacklevel=2)
     try:
         pyro.util.deep_getattr(obj, name)
         return True
@@ -18,8 +19,13 @@ def deep_hasattr(obj, name):
         return False
 
 
-deep_setattr = pyro.infer.autoguide.guides._deep_setattr
-deep_getattr = pyro.util.deep_getattr
+def deep_setattr(obj, key, val):
+    warn('deep_setattr is deprecated.', DeprecationWarning, stacklevel=2)
+    return pyro.infer.autoguide.guides.deep_setattr(obj, key, val)
+
+def deep_getattr(obj, name):
+    warn('deep_getattr is deprecated.', DeprecationWarning, stacklevel=2)
+    return pyro.util.deep_getattr(obj, name)
 
 
 def to_pyro_module_(m, name="", recurse=True):
