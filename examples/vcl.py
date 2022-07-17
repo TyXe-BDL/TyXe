@@ -182,7 +182,7 @@ def main(root, dataset, inference, num_epochs=0):
 
         if inference == "mean-field":
             site_names = tyxe.util.pyro_sample_sites(bnn)
-            bnn.update_prior(tyxe.priors.DictPrior(bnn.net_guide.get_detached_distributions(site_names), prefix='net'))
+            bnn.update_prior(tyxe.priors.DictPrior(bnn.net_guide.get_detached_distributions(site_names)))
 
 
 if __name__ == '__main__':

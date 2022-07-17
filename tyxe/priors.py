@@ -187,17 +187,12 @@ class DictPrior(Prior):
     """Dictionary of prior distributions mapping parameter names as in module.named_parameters() to distribution
     objects."""
 
-    def __init__(self, prior_dict, prefix='',  *args, **kwargs):
+    def __init__(self, prior_dict,  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.prior_dict = prior_dict
-        self.prefix = prefix
 
     def prior_dist(self, name, module, param):
-        try:
-            return self.prior_dict[self.prefix+ ('.' if self.prefix else '') +name]
-        except KeyError as e:
-            print(f"Found these keys: {self.prior_dict.keys()}, but not {name} perhaps add a prefix?")
-            raise e
+        return self.prior_dict[name]
 
 class LambdaPrior(Prior):
     """Utility class to avoid implementing a prior class for a given function."""

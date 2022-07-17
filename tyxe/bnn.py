@@ -53,7 +53,7 @@ class _BNN(pynn.PyroModule):
         :param tyxe.priors.Prior new_prior: Prior for replacing the previous prior, i.e. substituting the PyroSample
             attributes of the net."""
         self.prior = new_prior
-        self.prior.update_(self.net)
+        self.prior.update_(self)
 
 
 class GuidedBNN(_BNN):
