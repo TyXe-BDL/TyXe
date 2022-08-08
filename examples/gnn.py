@@ -51,13 +51,13 @@ class Net(nn.Module):
 
 def load_cora_data():
     data = citegrh.load_cora()
-    features = torch.FloatTensor(data.features)
-    labels = torch.LongTensor(data.labels)
-    train_mask = torch.BoolTensor(data.train_mask)
-    test_mask = torch.BoolTensor(data.test_mask)
-    val_mask = torch.BoolTensor(data.val_mask)
-    g = dgl.from_networkx(data.graph)
-    return g, features, labels, train_mask, test_mask, val_mask
+    graph = data[0]
+    features = torch.FloatTensor(graph.ndata['feat'])
+    labels = torch.LongTensor(graph.ndata['label'])
+    train_mask = torch.BoolTensor(graph.ndata['train_mask'] )
+    test_mask = torch.BoolTensor(graph.ndata['test_mask'])
+    val_mask = torch.BoolTensor(graph.ndata['val_mask'] )
+    return graph, features, labels, train_mask, test_mask, val_mask
 
 
 def calc_ece(probs, labels, num_bins):
