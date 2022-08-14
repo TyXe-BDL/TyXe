@@ -111,10 +111,10 @@ pip install -e .
 ## Citation
 If you use TyXe, please consider citing:
 ```
-@article{ritter2021tyxe,
+@inproceedings{ritter2022tyxe,
   title={Ty{X}e: Pyro-based {B}ayesian neural nets for {P}ytorch},
   author={Ritter, Hippolyt and Karaletsos, Theofanis},
-  journal={arXiv preprint arXiv:2110.00276},
-  year={2021}
+  booktitle={Proceedings of Machine Learning and Systems},
+  year={2022}
 }
 ```

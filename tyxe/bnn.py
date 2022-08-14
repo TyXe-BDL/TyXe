@@ -8,7 +8,6 @@ import pyro.nn as pynn
 import pyro.poutine as poutine
 from pyro.infer import SVI, Trace_ELBO, TraceMeanField_ELBO, MCMC
 
-
 from . import util
 
 
@@ -54,7 +53,7 @@ class _BNN(pynn.PyroModule):
         :param tyxe.priors.Prior new_prior: Prior for replacing the previous prior, i.e. substituting the PyroSample
             attributes of the net."""
         self.prior = new_prior
-        self.prior.update_(self.net)
+        self.prior.update_(self)
 
 
 class GuidedBNN(_BNN):
