@@ -131,11 +131,13 @@ def main(dataset, architecture, inference, train_batch_size, test_batch_size, lo
 
     def callback(b, i, avg_elbo):
         avg_err, avg_ll = 0., 0.
+        b.eval()
         for x, y in iter(test_loader):
             err, ll = b.evaluate(x.to(device), y.to(device), num_predictions=test_samples)
             avg_err += err / len(test_loader.sampler)
             avg_ll += ll / len(test_loader.sampler)
         print(f"ELBO={avg_elbo}; test error={100 * avg_err:.2f}%; LL={avg_ll:.4f}")
+        b.train()
 
     with fit_ctxt():
         bnn.fit(train_loader, optim, num_epochs, callback=callback, device=device)
