@@ -8,10 +8,11 @@ TyXe Documentation
 TyXe website and docs. Under construction!
 
 .. toctree::
-    :maxdepth: 2
+    :maxdepth: 1
     :caption: Tutorials
 
     tutorials
+    tutorials.regression
 
 
 API Reference
